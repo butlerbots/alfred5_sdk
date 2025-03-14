@@ -1,3 +1,8 @@
-export const config = {
-    server: "https://core.butlerbot.net"
+export const CONFIG = {
+    server: "https://core.butlerbot.net",
+    paths: {
+        conversation: {
+            v3: { base: "/api/alfred/v3" }
+        }
+    }
 }
