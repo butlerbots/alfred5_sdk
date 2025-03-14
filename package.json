@@ -1,0 +1,40 @@
+{
+  "name": "butlerbot",
+  "version": "0.0.1",
+  "description": "The official ButlerBot SDK",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist/**/*"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "jest"
+  },
+  "keywords": [
+    "butlerbot",
+    "alfred",
+    "sdk",
+    "chatbot",
+    "ai",
+    "butler"
+  ],
+  "author": "Fragly",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/isdevco/alfred5_sdk.git"
+  },
+  "bugs": {
+    "url": "https://github.com/isdevco/alfred5_sdk/issues"
+  },
+  "homepage": "https://butlerbot.net",
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "jest": "^29.7.0",
+    "typescript": "^5.8.2"
+  }
+}
