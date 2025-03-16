@@ -23,5 +23,8 @@ export class Conversation {
         this.apiKey = config.apiKey;
     }
 
-
+    /** Sends a message into the conversation */
+    async send(prompt: string) {
+        
+    }
 }
