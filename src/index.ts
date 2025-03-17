@@ -35,7 +35,3 @@ export class ButlerBotClient {
         return new Conversation({ apiKey: this.apiKey, serverUrl: this.serverUrl, ...config });
     }
 }
-
-// Example:
-const client = new ButlerBotClient({ apiKey: "sss" });
-const convo = client.createConversation();
