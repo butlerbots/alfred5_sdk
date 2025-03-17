@@ -1,3 +1,4 @@
+import { EventSource } from "eventsource";
 import { CONFIG } from "../config";
 import { RequestResponse } from "../types/dialogue_response_v3";
 
@@ -51,14 +52,22 @@ export class Conversation {
 
         const sse = new EventSource(url);
 
-        sse.onmessage = (event) => {
+        sse.addEventListener("message", (event) => {
             const data = JSON.parse(event.data) as RequestResponse;
-            if (data.payload.quitStream) sse.close();
             cb(data);
-        }
+            if (data.data.quitStream) sse.close();
+        });
 
-        sse.onerror = (event) => {
-            console.error(event);
-        }
+        sse.addEventListener("error", (event) => {
+            cb({
+                success: false,
+                data: {
+                    code: "STREAM_ERROR",
+                    error: "Stream error",
+                    message: event.message || "An error occurred while streaming",
+                    quitStream: true
+                }
+            })
+        });
     }
 }

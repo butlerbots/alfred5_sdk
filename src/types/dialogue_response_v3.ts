@@ -10,7 +10,7 @@ type RequestBaseResponsePayload = {
 
 export type RequestFailResponse = {
     success: false;
-    payload: {
+    data: {
         /** Error code */
         code: ErrorCode;
         /** Error message */
@@ -22,7 +22,7 @@ export type RequestFailResponse = {
 
 export type RequestSucessResponse = {
     success: true;
-    payload: {
+    data: {
         /** The AI's response */
         response: AIResponse;
     } & RequestBaseResponsePayload;

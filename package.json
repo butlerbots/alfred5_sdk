@@ -9,6 +9,7 @@
   ],
   "scripts": {
     "build": "tsc",
+    "pack": "npm run build && npm pack",
     "test": "jest"
   },
   "keywords": [
@@ -35,5 +36,8 @@
   "devDependencies": {
     "@types/node": "^22.13.10",
     "typescript": "^5.8.2"
+  },
+  "dependencies": {
+    "eventsource": "^3.0.5"
   }
 }
