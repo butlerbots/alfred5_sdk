@@ -1,0 +1,6 @@
+# .npmignore
+node_modules/
+tests/
+.vscode/
+*.test.js
+*.spec.js
