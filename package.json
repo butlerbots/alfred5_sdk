@@ -9,7 +9,8 @@
   ],
   "scripts": {
     "build": "tsc",
-    "pack": "npm run build && npm pack",
+    "pack": "npm run build && npm pack --pack-destination=\"G:\\tarballs\"",
+
     "test": "jest"
   },
   "keywords": [
