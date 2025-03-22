@@ -2,6 +2,14 @@
 
 ButlerBot SDK is a JavaScript library that provides a simple way to interact with the [ButlerBot](https://butlerbot.net/) API.
 
+## Quickstart
+
+Grab an API key at [ButlerBot](https://butlerbot.net/) and install the package:
+
+```bash
+npm i @butlerbot/sdk
+```
+
 ## Prerequisites
 
 - ButlerBot API key
@@ -9,7 +17,7 @@ ButlerBot SDK is a JavaScript library that provides a simple way to interact wit
 ## Example
 
 ```typescript
-import { ButlerBotClient } from "butlerbot";
+import { ButlerBotClient } from "@butlerbot/sdk";
 
 const client = new ButlerBotClient({
   apiKey: "your_api_key_here",
