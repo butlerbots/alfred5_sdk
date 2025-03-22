@@ -86,7 +86,8 @@ export class Conversation {
                     message: event.message || "An error occurred while streaming",
                     quitStream: true
                 }
-            })
+            });
+            sse.close();
         });
     }
 }
