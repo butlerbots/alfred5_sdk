@@ -25,6 +25,8 @@ export type RequestSucessResponse = {
     data: {
         /** The AI's response */
         response: AIResponse;
+        /** The convoId, passed in most responses */
+        convoId?: string;
     } & RequestBaseResponsePayload;
 }
 

@@ -68,6 +68,10 @@ export class Conversation {
 
         sse.addEventListener("message", (event) => {
             const data = JSON.parse(event.data) as RequestResponse;
+
+            const convoId = data.success ? data.data.convoId : undefined;
+            if (convoId) this.convoId = convoId; // update convo id from response
+
             cb(data);
             if (data.data.quitStream) sse.close();
         });
