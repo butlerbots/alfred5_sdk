@@ -46,3 +46,9 @@ export class ButlerBotClient {
 
 // Expose types from subsequent modules
 export { Conversation, ConversationOptions };
+
+// Expose types from /types
+export * from "./types/ai_response_v3" // ai_response_v3.ts
+export * from "./types/dialogue_response_v3" // dialogue_response_v3.ts
+export * from "./types/error" // error.ts
+export * from "./types/ai_tools_v3" // ai_tools_v3.ts

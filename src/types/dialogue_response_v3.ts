@@ -1,7 +1,7 @@
 import { AIResponse } from "./ai_response_v3";
 import { ErrorCode } from "./error";
 
-type RequestBaseResponsePayload = {
+export type RequestBaseResponsePayload = {
     /** Whether the conversation's ending */
     end?: boolean;
     /** Whether the stream is ending */

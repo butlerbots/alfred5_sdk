@@ -1,11 +1,11 @@
 import { AIToolStatusData } from "./ai_tools_v3";
 import { ErrorCode } from "./error";
 
-type AIChatResultFail = { success: false, errorcode: ErrorCode };
-type AIChatResultSuccess = { success: true, response: AIResponse[], usage: any };
+export type AIChatResultFail = { success: false, errorcode: ErrorCode };
+export type AIChatResultSuccess = { success: true, response: AIResponse[], usage: any };
 export type AIChatResult = AIChatResultFail | AIChatResultSuccess;
 
-type BaseAIResponseMetadata = {
+export type BaseAIResponseMetadata = {
     /** The model that generated this message */
     model: string;
     /** The actual model ID that generated this message */
@@ -14,7 +14,7 @@ type BaseAIResponseMetadata = {
     timestamp: number;
 }
 
-type AIMessageResponse = {
+export type AIMessageResponse = {
     /** Specifies type to be a message */
     type: "message";
     payload: {
@@ -27,7 +27,7 @@ type AIMessageResponse = {
     };
     metadata: BaseAIResponseMetadata & {};
 }
-type AIResponseStatusResponse = {
+export type AIResponseStatusResponse = {
     /** Specifies type to be a status update for the response */
     type: "response_status";
     payload: {
@@ -35,7 +35,7 @@ type AIResponseStatusResponse = {
         completed: boolean;
     };
 }
-type AIConvoStatusResponse = {
+export type AIConvoStatusResponse = {
     /** Specifies type to be a status update for the conversation */
     type: "convo_status";
     payload: {
@@ -46,7 +46,7 @@ type AIConvoStatusResponse = {
         stopped: boolean;
     };
 }
-type AIToolResponse = {
+export type AIToolResponse = {
     /** Specifies type to be a tool use status update */
     type: "tool";
     payload: {
