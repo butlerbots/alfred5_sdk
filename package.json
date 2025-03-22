@@ -1,6 +1,6 @@
 {
   "name": "@butlerbot/sdk",
-  "version": "0.0.1-alpha4",
+  "version": "0.0.1-alpha5",
   "description": "The official ButlerBot SDK",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -10,7 +10,7 @@
   "scripts": {
     "build": "tsc",
     "pack": "npm run build && npm pack --pack-destination=\"G:\\tarballs\"",
-    "publish": "npm run build && npm publish --access public",
+    "update": "npm run build && npm publish --access public",
     "test": "jest"
   },
   "keywords": [
