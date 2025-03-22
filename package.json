@@ -1,5 +1,5 @@
 {
-  "name": "butlerbot",
+  "name": "@butlerbot/sdk",
   "version": "0.0.1-alpha1",
   "description": "The official ButlerBot SDK",
   "main": "dist/index.js",
