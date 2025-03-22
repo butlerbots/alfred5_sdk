@@ -43,3 +43,6 @@ export class ButlerBotClient {
         return new Conversation({ debug: this.debug, apiKey: this.apiKey, serverUrl: this.serverUrl, ...config });
     }
 }
+
+// Expose types from subsequent modules
+export { Conversation, ConversationOptions };
