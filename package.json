@@ -10,7 +10,7 @@
   "scripts": {
     "build": "tsc",
     "pack": "npm run build && npm pack --pack-destination=\"G:\\tarballs\"",
-
+    "publish": "npm run build && npm publish --access public",
     "test": "jest"
   },
   "keywords": [
