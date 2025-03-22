@@ -1,3 +1,4 @@
+import { AIToolStatusData } from "./ai_tools_v3";
 import { ErrorCode } from "./error";
 
 type AIChatResultFail = { success: false, errorcode: ErrorCode };
@@ -49,7 +50,8 @@ type AIToolResponse = {
     /** Specifies type to be a tool use status update */
     type: "tool";
     payload: {
-
+        status: string;
+        info: AIToolStatusData;
     };
     metadata: BaseAIResponseMetadata & {};
 }
