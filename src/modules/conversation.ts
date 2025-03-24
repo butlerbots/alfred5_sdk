@@ -17,6 +17,8 @@ export type DialogueRequestParams = {
     personality?: string;
 }
 
+export type DialogueRequestOptions = Omit<Omit<DialogueRequestParams, "message">, "chatId">;
+
 export type ConversationOptions = {
     /** The conversation ID to load the conversation from, server will error if this convo id doesn't exist */
     convoId?: string;
@@ -44,10 +46,11 @@ export class Conversation {
     }
 
     /** Sends a message into the conversation */
-    async send(message: string, cb: (chunk: RequestResponse) => any): Promise<void> {
+    async send(message: string, cb: (chunk: RequestResponse) => any, options?: DialogueRequestOptions): Promise<void> {
         const params: DialogueRequestParams & { api_key: string } = {
             message,
-            api_key: this.apiKey
+            api_key: this.apiKey,
+            ...options
         }
         if (this.convoId) params.chatId = this.convoId;
 

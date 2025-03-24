@@ -1,16 +1,16 @@
 import { ButlerBotClient } from "../src";
 
 const client = new ButlerBotClient({
-    apiKey: "your_api_key_here"
+  apiKey: "your_api_key_here"
 });
 
 const convo = client.createConversation();
 
 convo.send("Hello there, what's 1+1", (res) => {
-    if (!res.success) return;
+  if (!res.success) return;
 
-    const { type, payload } = res.data.response;
-    console.log(type, payload);
+  const { type, payload } = res.data.response;
+  console.log(type, payload);
 })
 
 /*

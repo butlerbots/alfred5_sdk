@@ -20,7 +20,7 @@ export type RequestFailResponse = {
     } & RequestBaseResponsePayload;
 }
 
-export type RequestSucessResponse = {
+export type RequestSuccessResponse = {
     success: true;
     data: {
         /** The AI's response */
@@ -30,4 +30,4 @@ export type RequestSucessResponse = {
     } & RequestBaseResponsePayload;
 }
 
-export type RequestResponse = RequestFailResponse | RequestSucessResponse;
+export type RequestResponse = RequestFailResponse | RequestSuccessResponse;
