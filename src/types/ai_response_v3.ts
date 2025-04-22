@@ -10,7 +10,9 @@ export type BaseAIResponseMetadata = {
     model: string;
     /** The actual model ID that generated this message */
     modelId: string;
-    /** Epoch time for when this happened */
+    /** The time when this action started (represents time of first action, meaning in streamed messages it'll hold the time the first chunk was sent) */
+    firstTimestamp: number;
+    /** Epoch time for when this happened (represents time of last action, meaning in streamed messages it'll hold the time the last chunk was sent) */
     timestamp: number;
 }
 
