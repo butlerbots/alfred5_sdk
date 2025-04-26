@@ -5,6 +5,11 @@ export type AIChatResultFail = { success: false, errorcode: ErrorCode };
 export type AIChatResultSuccess = { success: true, response: AIResponse[], usage: any };
 export type AIChatResult = AIChatResultFail | AIChatResultSuccess;
 
+type AIChatProfileDisplayEntity = {
+    name?: string;
+    avatarUrl?: string;
+}
+
 export type BaseAIResponseMetadata = {
     /** The model that generated this message */
     model: string;
@@ -16,7 +21,7 @@ export type BaseAIResponseMetadata = {
     timestamp: number;
 }
 
-export type AIMessageResponse = {
+type AIMessageResponse = {
     /** Specifies type to be a message */
     type: "message";
     payload: {
@@ -27,7 +32,10 @@ export type AIMessageResponse = {
         /** Whether this message was completed */
         completed: boolean;
     };
-    metadata: BaseAIResponseMetadata & {};
+    metadata: BaseAIResponseMetadata & {
+        /** Display data for this message response, such as the author's name and profile picture */
+        display?: AIChatProfileDisplayEntity;
+    };
 }
 export type AIResponseStatusResponse = {
     /** Specifies type to be a status update for the response */
