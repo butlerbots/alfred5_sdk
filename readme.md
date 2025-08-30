@@ -10,6 +10,8 @@ Grab an API key at [ButlerBot](https://butlerbot.net/) and install the package:
 npm i @butlerbot/sdk
 ```
 
+> NOTE: API key is currently not available on the ButlerBot UI
+
 ## Prerequisites
 
 - ButlerBot API key
