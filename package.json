@@ -1,44 +1,44 @@
 {
-  "name": "@butlerbot/sdk",
-  "version": "0.0.2",
-  "description": "The official ButlerBot SDK",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
-  "files": [
-    "dist/**/*"
-  ],
-  "scripts": {
-    "build": "tsc",
-    "pack": "npm run build && npm pack --pack-destination=\"G:\\tarballs\"",
-    "update": "npm run build && npm publish --access public",
-    "test": "jest"
-  },
-  "keywords": [
-    "butlerbot",
-    "alfred",
-    "sdk",
-    "chatbot",
-    "ai",
-    "butler"
-  ],
-  "author": "Fragly",
-  "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/isdevco/alfred5_sdk.git"
-  },
-  "bugs": {
-    "url": "https://github.com/isdevco/alfred5_sdk/issues"
-  },
-  "homepage": "https://butlerbot.net",
-  "engines": {
-    "node": ">=14.0.0"
-  },
-  "devDependencies": {
-    "@types/node": "^22.13.10",
-    "typescript": "^5.8.2"
-  },
-  "dependencies": {
-    "eventsource": "^3.0.5"
-  }
+	"name": "@butlerbot/sdk",
+	"version": "0.0.4",
+	"description": "The official ButlerBot SDK",
+	"main": "dist/index.js",
+	"types": "dist/index.d.ts",
+	"files": [
+		"dist/**/*"
+	],
+	"scripts": {
+		"build": "tsc",
+		"pack": "npm run build && npm pack --pack-destination=\"G:\\tarballs\"",
+		"update": "npm run build && npm publish --access public",
+		"test": "jest"
+	},
+	"keywords": [
+		"butlerbot",
+		"alfred",
+		"sdk",
+		"chatbot",
+		"ai",
+		"butler"
+	],
+	"author": "Fragly",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/isdevco/alfred5_sdk.git"
+	},
+	"bugs": {
+		"url": "https://github.com/isdevco/alfred5_sdk/issues"
+	},
+	"homepage": "https://butlerbot.net",
+	"engines": {
+		"node": ">=14.0.0"
+	},
+	"devDependencies": {
+		"@types/node": "^22.13.10",
+		"typescript": "^5.8.2"
+	},
+	"dependencies": {
+		"eventsource": "^3.0.5"
+	}
 }
