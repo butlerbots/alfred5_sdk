@@ -37,6 +37,22 @@ type AIMessageResponse = {
         display?: AIChatProfileDisplayEntity;
     };
 }
+export type AIFileResponse = {
+    /** Specifies type to be a message */
+    type: "file";
+    payload: {
+        /** URL location of the file */
+        url?: string;
+        /** Base64 representation of the file */
+        base64?: string;
+        /** The media type of the file */
+        mediaType: string;
+    };
+    metadata: BaseAIResponseMetadata & {
+        /** Display data for this message response, such as the author's name and profile picture */
+        display?: AIChatProfileDisplayEntity;
+    };
+}
 export type AIResponseStatusResponse = {
     /** Specifies type to be a status update for the response */
     type: "response_status";
@@ -65,4 +81,4 @@ export type AIToolResponse = {
     };
     metadata: BaseAIResponseMetadata & {};
 }
-export type AIResponse = AIMessageResponse | AIToolResponse | AIConvoStatusResponse | AIResponseStatusResponse;
+export type AIResponse = AIMessageResponse | AIToolResponse | AIConvoStatusResponse | AIResponseStatusResponse | AIFileResponse;
