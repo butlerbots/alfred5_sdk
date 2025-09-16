@@ -37,6 +37,21 @@ type AIMessageResponse = {
         display?: AIChatProfileDisplayEntity;
     };
 }
+
+export type AIReasoningResponse = {
+    /** Specifies type to be a reasoning update */
+    type: "reasoning";
+    payload: {
+        /** The reasoning text */
+        reasoning: string;
+        /** The associated reasoning id */
+        reasoningId: string;
+        /** Whether this reasoning step is completed */
+        completed: boolean;
+    };
+    metadata: BaseAIResponseMetadata;
+}
+
 export type AIFileResponse = {
     /** Specifies type to be a message */
     type: "file";
@@ -81,4 +96,4 @@ export type AIToolResponse = {
     };
     metadata: BaseAIResponseMetadata & {};
 }
-export type AIResponse = AIMessageResponse | AIToolResponse | AIConvoStatusResponse | AIResponseStatusResponse | AIFileResponse;
+export type AIResponse = AIMessageResponse | AIToolResponse | AIConvoStatusResponse | AIResponseStatusResponse | AIFileResponse | AIReasoningResponse;
