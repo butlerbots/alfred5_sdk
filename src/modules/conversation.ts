@@ -1,6 +1,6 @@
 import { EventSource } from "eventsource";
 import { CONFIG } from "../config";
-import { RequestResponse } from "../types/dialogue_response_v3";
+import { RequestResponseV3 } from "../types/type_registry";
 
 export type DialogueRequestParams = {
     /** Unique identifier for the chat session */
@@ -19,6 +19,8 @@ export type DialogueRequestParams = {
 
 export type DialogueRequestOptions = Omit<Omit<DialogueRequestParams, "message">, "chatId">;
 
+type APIPath = keyof typeof CONFIG.paths.conversation;
+
 export type ConversationOptions = {
     /** The conversation ID to load the conversation from, server will error if this convo id doesn't exist */
     convoId?: string;
@@ -30,7 +32,12 @@ export type ConversationOptions = {
     path?: string;
     /** Whether to enable debug logs */
     debug?: boolean;
+    /** The API version to use */
+    api?: APIPath;
 }
+
+const DEFAULT_API: APIPath = "v3";
+export type RequestResponse = RequestResponseV3;
 
 export class Conversation {
     convoId?: string;
@@ -41,7 +48,7 @@ export class Conversation {
 
     constructor(config: ConversationOptions) {
         this.convoId = config.convoId;
-        this.endpoint = (config.serverUrl || CONFIG.server) + (config.path || CONFIG.paths.conversation.v3.base);
+        this.endpoint = (config.serverUrl || CONFIG.server) + (config.path || CONFIG.paths.conversation[config.api || DEFAULT_API].base);
         this.apiKey = config.apiKey;
         this.debug = config.debug || false;
     }

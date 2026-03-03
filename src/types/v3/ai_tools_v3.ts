@@ -1,0 +1,1 @@
+export type AIToolStatusDataV3 = { failed: boolean, done: boolean, id: string, parentId?: string, endingConvo?: boolean };

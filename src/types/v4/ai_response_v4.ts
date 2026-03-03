@@ -1,16 +1,16 @@
-import { AIToolStatusData } from "./ai_tools_v3";
-import { ErrorCode } from "./error";
+import { AIToolStatusDataV4 } from "./ai_tools_v4";
+import { ErrorCode } from "../error";
 
-export type AIChatResultFail = { success: false, errorcode: ErrorCode };
-export type AIChatResultSuccess = { success: true, response: AIResponse[], usage: any };
-export type AIChatResult = AIChatResultFail | AIChatResultSuccess;
+export type AIChatResultFailV4 = { success: false, errorcode: ErrorCode };
+export type AIChatResultSuccessV4 = { success: true, response: AIResponseV4[], usage: any };
+export type AIChatResultV4 = AIChatResultFailV4 | AIChatResultSuccessV4;
 
 type AIChatProfileDisplayEntity = {
     name?: string;
     avatarUrl?: string;
 }
 
-export type BaseAIResponseMetadata = {
+export type BaseAIResponseMetadataV4 = {
     /** The model that generated this message */
     model: string;
     /** The actual model ID that generated this message */
@@ -21,7 +21,50 @@ export type BaseAIResponseMetadata = {
     timestamp: number;
 }
 
-type AIMessageResponse = {
+/** Response Metadata */
+export type ResponseStatusMetadataV4 = {
+    /** Human-readable model name (e.g. "Claude-Sonnet") */
+    model: string;
+    /** Provider model identifier (e.g. "claude-sonnet-4-6") */
+    modelId: string;
+    /** Token usage breakdown */
+    tokens: {
+        input: number;
+        output: number;
+        total: number;
+        cachedInput: number;
+        reasoningOutput: number;
+    };
+    /** Usage budget info */
+    usage: {
+        /** Current usage cost as a percentage of daily limit (0–1) */
+        percentage: number;
+        /** Human-readable percentage (e.g. "42.3%") */
+        percentageDisplay: string;
+        /** Name of the active usage stage */
+        stageName: string;
+    };
+    /** Model switching info (tiered auto-downgrade) */
+    modelSwitching: {
+        /** Whether the model was switched from the user's request */
+        switched: boolean;
+        /** Originally requested model */
+        requestedModel: string;
+        /** Model that was actually used */
+        activeModel: string;
+        /** Usage stage that triggered the switch */
+        stage?: string;
+    };
+    /** Response timing */
+    timing: {
+        /** Milliseconds from request start to first streamed event */
+        firstEventMs: number;
+        /** Total response time in milliseconds */
+        totalMs: number;
+    };
+}
+
+type AIMessageResponseV4 = {
     /** Specifies type to be a message */
     type: "message";
     payload: {
@@ -32,13 +75,13 @@ type AIMessageResponse = {
         /** Whether this message was completed */
         completed: boolean;
     };
-    metadata: BaseAIResponseMetadata & {
+    metadata: BaseAIResponseMetadataV4 & {
         /** Display data for this message response, such as the author's name and profile picture */
         display?: AIChatProfileDisplayEntity;
     };
 }
 
-export type AIReasoningResponse = {
+export type AIReasoningResponseV4 = {
     /** Specifies type to be a reasoning update */
     type: "reasoning";
     payload: {
@@ -49,10 +92,10 @@ export type AIReasoningResponse = {
         /** Whether this reasoning step is completed */
         completed: boolean;
     };
-    metadata: BaseAIResponseMetadata;
+    metadata: BaseAIResponseMetadataV4;
 }
 
-export type AIFileResponse = {
+export type AIFileResponseV4 = {
     /** Specifies type to be a message */
     type: "file";
     payload: {
@@ -63,20 +106,22 @@ export type AIFileResponse = {
         /** The media type of the file */
         mediaType: string;
     };
-    metadata: BaseAIResponseMetadata & {
+    metadata: BaseAIResponseMetadataV4 & {
         /** Display data for this message response, such as the author's name and profile picture */
         display?: AIChatProfileDisplayEntity;
     };
 }
-export type AIResponseStatusResponse = {
+export type AIResponseStatusResponseV4 = {
     /** Specifies type to be a status update for the response */
     type: "response_status";
     payload: {
         /** Whether the entire AI response is completed */
         completed: boolean;
+        /** Response status metadata on success */
+        metadata?: ResponseStatusMetadataV4;
     };
 }
-export type AIConvoStatusResponse = {
+export type AIConvoStatusResponseV4 = {
     /** Specifies type to be a status update for the conversation */
     type: "convo_status";
     payload: {
@@ -87,13 +132,13 @@ export type AIConvoStatusResponse = {
         stopped: boolean;
     };
 }
-export type AIToolResponse = {
+export type AIToolResponseV4 = {
     /** Specifies type to be a tool use status update */
     type: "tool";
     payload: {
         status: string;
-        info: AIToolStatusData;
+        info: AIToolStatusDataV4;
     };
-    metadata: BaseAIResponseMetadata & {};
+    metadata: BaseAIResponseMetadataV4 & {};
 }
-export type AIResponse = AIMessageResponse | AIToolResponse | AIConvoStatusResponse | AIResponseStatusResponse | AIFileResponse | AIReasoningResponse;
+export type AIResponseV4 = AIMessageResponseV4 | AIToolResponseV4 | AIConvoStatusResponseV4 | AIResponseStatusResponseV4 | AIFileResponseV4 | AIReasoningResponseV4;
