@@ -21,22 +21,109 @@ export type BaseAIResponseMetadataV4 = {
     timestamp: number;
 }
 
-/** Response Metadata */
-export type ResponseStatusMetadataV4 = {
+export type TokenUsageV4 = {
     /** Human-readable model name (e.g. "Claude-Sonnet") */
     model: string;
     /** Provider model identifier (e.g. "claude-sonnet-4-6") */
     modelId: string;
+    /** Model-specific information */
+    modelInfo: {
+        /** Maximum context length for this model */
+        contextLimit?: number;
+    }
     /** Token usage breakdown */
     tokens: {
-        input: number;
-        output: number;
-        total: number;
-        cachedInput: number;
-        reasoningOutput: number;
+        /**
+     * The total number of input (prompt) tokens used.
+     */
+        inputTokens: number | undefined;
+        /**
+         * Detailed information about the input tokens.
+         */
+        inputTokenDetails: {
+            /**
+             * The number of non-cached input (prompt) tokens used.
+             */
+            noCacheTokens: number | undefined;
+            /**
+             * The number of cached input (prompt) tokens read.
+             */
+            cacheReadTokens: number | undefined;
+            /**
+             * The number of cached input (prompt) tokens written.
+             */
+            cacheWriteTokens: number | undefined;
+        };
+        /**
+         * The number of total output (completion) tokens used.
+         */
+        outputTokens: number | undefined;
+        /**
+         * Detailed information about the output tokens.
+         */
+        outputTokenDetails: {
+            /**
+             * The number of text tokens used.
+             */
+            textTokens: number | undefined;
+            /**
+             * The number of reasoning tokens used.
+             */
+            reasoningTokens: number | undefined;
+        };
+        /**
+         * The total number of tokens used.
+         */
+        totalTokens: number | undefined;
+        /**
+         * Raw usage information from the provider.
+         *
+         * This is the usage information in the shape that the provider returns.
+         * It can include additional information that is not part of the standard usage information.
+         */
+        raw?: any;
+    }
+}
+
+export type ModelMessageCostV4 = {
+    inputCost: number,
+    outputCost: number,
+    totalCost: number,
+    inputCostDetails: {
+        noCacheCost: number,
+        cacheReadCost: number,
+        cacheWriteCost: number,
+    },
+    outputCostDetails: {
+        textCost: number,
+        reasoningCost: number,
+    },
+}
+
+/** Response Metadata */
+export type ResponseStatusMetadataV4 = {
+   /** Human-readable model name (e.g. "Claude-Sonnet") */
+    model: string;
+    /** Provider model identifier (e.g. "claude-sonnet-4-6") */
+    modelId: string;
+    /** Model-specific information */
+    modelInfo: {
+        /** Maximum context length for this model */
+        contextLimit?: number;
+    }
+    /** Token usage breakdown */
+    tokens: TokenUsageV4;
+    /** The cost breakdown */
+    cost: {
+        /** The cost of the current turn */
+        turnCost?: ModelMessageCostV4
+        /** The current user's usage cost */
+        dailyUsageCost: number;
+        /** The user's cost limit for the conversation (e.g., daily limit) */
+        dailyUsageCostLimit: number;
     };
     /** Usage budget info */
-    usage: {
+    limit: {
         /** Current usage cost as a percentage of daily limit (0–1) */
         percentage: number;
         /** Human-readable percentage (e.g. "42.3%") */
