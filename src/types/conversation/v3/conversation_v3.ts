@@ -167,14 +167,18 @@ export type MessagePayload = {
     /** The message content */
     message: string;
     /** The UUID of this message */
-    messageId: string
+    messageId: string;
+    /** Whether this message chunk is the final one */
+    completed: boolean;
 };
 
 export type ReasoningPayload = {
     /** The reasoning content */
     reasoning: string;
     /** The UUID of this reasoning */
-    reasoningId: string
+    reasoningId: string;
+    /** Whether this reasoning chunk is the final one */
+    completed: boolean;
 };
 
 export type FilePayload = {
@@ -223,7 +227,7 @@ export type BaseResponseMetadata = {
 
 export type MessageEvent = {
     type: "message";
-    payload: MessagePayload & { messageId: string; completed: boolean };
+    payload: MessagePayload;
     metadata: BaseResponseMetadata & {
         display?: DisplayEntity;
     };
@@ -231,7 +235,7 @@ export type MessageEvent = {
 
 export type ReasoningEvent = {
     type: "reasoning";
-    payload: ReasoningPayload & { completed: boolean };
+    payload: ReasoningPayload;
     metadata: BaseResponseMetadata;
 }
 

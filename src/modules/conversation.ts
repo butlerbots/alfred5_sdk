@@ -215,6 +215,7 @@ export class Conversation {
     /** Sends a message into the conversation */
     async send(message: string, cb: (chunk: RequestResponse) => any, options?: DialogueRequestOptions): Promise<void> {
         const url = this.formatURL(this.endpoints.conversation, {
+            chatId: this.convoId,
             message,
             ...this.options, // options set for convo
             ...options // overwrite convos for this call
