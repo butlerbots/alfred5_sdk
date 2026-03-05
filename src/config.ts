@@ -8,10 +8,10 @@ export const CONFIG = {
         },
         history: {
             chat: {
-                v1: { base: "/api/history/chat" },
+                v1: { base: "/api/convo/chat" },
             },
             chats: {
-                v1: { base: "/convo/get/history" }
+                v1: { base: "/api/convo/get/history" }
             }
         }
     }
