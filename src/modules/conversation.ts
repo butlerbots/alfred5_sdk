@@ -1,6 +1,7 @@
 import { EventSource } from "eventsource";
 import { CONFIG } from "../config";
 import { RequestResponseV3 } from "../types/type_registry";
+import { ConversationStateResponse } from "../types/state/convo_state_response";
 
 export type DialogueRequestParams = {
     /** Unique identifier for the chat session */
@@ -28,15 +29,22 @@ export type ConversationOptions = {
     apiKey: string;
     /** The server URL to use */
     serverUrl?: string;
-    /** The path to append to the server URL specifying the API endpoint to use */
+    /** 
+     * The path to append to the server URL specifying the API endpoint to use (specifically for conversations) 
+     * @deprecated use convoPath instead
+    */
     path?: string;
+    /** The path to append to the server URL specifying the conversation API endpoint to use */
+    convoPath?: string;
+    /** The path to append to the server URL specifying the history API endpoint to use */
+    historyPath?: string;
     /** Whether to enable debug logs */
     debug?: boolean;
     /** The API version to use */
-    api?: APIPath;
+    chatApiV?: APIPath;
 }
 
-const DEFAULT_API: APIPath = "v3";
+const DEFAULT_CONVO_API_V: APIPath = "v3";
 export type RequestResponse = RequestResponseV3;
 
 export class Conversation {
@@ -44,20 +52,45 @@ export class Conversation {
     apiKey: string;
     private debug: boolean;
     private options?: DialogueRequestOptions
-    private endpoint: string;
+
+    private endpoints: {
+        conversation: string,
+        history: string,
+    }
 
     constructor(config: ConversationOptions) {
         this.convoId = config.convoId;
-        this.endpoint = (config.serverUrl || CONFIG.server) + (config.path || CONFIG.paths.conversation[config.api || DEFAULT_API].base);
+
+        const serverUrl = config.serverUrl || CONFIG.server;
+        this.endpoints = {
+            conversation: serverUrl + (config.convoPath || config.path || CONFIG.paths.conversation[config.chatApiV || DEFAULT_CONVO_API_V].base),
+            history: serverUrl + (config.historyPath || CONFIG.paths.history.chat.v1.base),
+        }
+
         this.apiKey = config.apiKey;
         this.debug = config.debug || false;
     }
 
     // SETTERS
 
-    /** Sets the endpoint where the request is sent to, appended to server URL */
+    /** 
+     * Sets the endpoint where the request is sent to, appended to server URL
+     * @deprecated Use setConversationEndpoint() instead
+     */
     setEndpoint(endpoint: string) {
-        this.endpoint = endpoint;
+        this.endpoints.conversation = endpoint;
+        return this;
+    }
+
+    /** Sets the conversation endpoint where the request is sent to, appended to server URL */
+    setConversationEndpoint(conversationEndpoint: string) {
+        this.endpoints.conversation = conversationEndpoint;
+        return this;
+    }
+
+    /** Sets the history endpoint where the quest is sent to, appended to server URL */
+    setHistoryEndpoint(historyEndpoint: string) {
+        this.endpoints.history = historyEndpoint;
         return this;
     }
 
@@ -98,9 +131,22 @@ export class Conversation {
         return this.convoId;
     }
 
-    /** Gets the current endpoint */
+    /** 
+     * Gets the current endpoint 
+     * @deprecated Use getConversationEndpoint() instead
+    */
     getEndpoint() {
-        return this.endpoint;
+        return this.endpoints.conversation;
+    }
+
+    /** Gets the current conversation endpoint */
+    getConversationEndpoint() {
+        return this.endpoints.conversation;
+    }
+
+    /** Gets the current history endpoint */
+    getHistoryEndpoint() {
+        return this.endpoints.history;
     }
 
     /** Gets the current options object */
@@ -123,30 +169,56 @@ export class Conversation {
         return this.options?.personality;
     }
 
-    // LIFE CYCLE
+    // HELPERS
 
-    /** Sends a message into the conversation */
-    async send(message: string, cb: (chunk: RequestResponse) => any, options?: DialogueRequestOptions): Promise<void> {
-        const params: DialogueRequestParams & { api_key: string } = {
-            message,
+    formatURL(url: string, params: Object = {}) {
+        const fParams: { api_key: string } = {
             api_key: this.apiKey,
-            ...this.options, // options set for convo
-            ...options // overwrite convos for this call
+            ...params
         }
-        if (this.convoId) params.chatId = this.convoId;
-
-        const paramQuery = new URLSearchParams(params as any).toString();
-        const url = `${this.endpoint}?${paramQuery}`;
+        const paramQuery = new URLSearchParams(fParams as any).toString();
+        const fUrl = `${url}?${paramQuery}`;
 
         if (this.debug) {
-            const debugUrl = new URL(url);
+            const debugUrl = new URL(fUrl);
             const apiKey = debugUrl.searchParams.get('api_key');
             if (apiKey) {
                 const obscuredKey = apiKey.length > 6 ? `${apiKey.slice(0, 3)}...${apiKey.slice(-3)}` : '***';
                 debugUrl.searchParams.set('api_key', obscuredKey);
             }
-            console.log(`[Requesting URL ${debugUrl.toString()}]`);
+            console.log(`[Formatting URL ${debugUrl.toString()}]`);
         }
+
+        return fUrl;
+    }
+
+    // GETTERS
+
+    /** Fetches the conversation state from the server, including message history and metadata */
+    async fetchState() {
+        if (!this.convoId) throw new Error("Conversation ID is not set");
+
+        const url = this.formatURL(`${this.endpoints.history}/${this.convoId}`);
+        const response = await fetch(url);
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Failed to fetch conversation state: ${response.status} ${response.statusText} - ${errorText}`);
+        }
+
+        const data = await response.json() as ConversationStateResponse;
+        return data;
+    }
+
+    // LIFE CYCLE
+
+    /** Sends a message into the conversation */
+    async send(message: string, cb: (chunk: RequestResponse) => any, options?: DialogueRequestOptions): Promise<void> {
+        const url = this.formatURL(this.endpoints.conversation, {
+            message,
+            ...this.options, // options set for convo
+            ...options // overwrite convos for this call
+        });
 
         const sse = new EventSource(url);
 

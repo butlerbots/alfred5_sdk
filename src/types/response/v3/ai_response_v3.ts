@@ -1,14 +1,10 @@
 import { AIToolStatusDataV3 } from "./ai_tools_v3";
-import { ErrorCode } from "../error";
+import { ErrorCode } from "../../error";
+import { AIChatProfileDisplayEntity } from "../../conversation/v2/conversation_v2";
 
 export type AIChatResultFailV3 = { success: false, errorcode: ErrorCode };
 export type AIChatResultSuccessV3 = { success: true, response: AIResponseV3[], usage: any };
 export type AIChatResultV3 = AIChatResultFailV3 | AIChatResultSuccessV3;
-
-type AIChatProfileDisplayEntity = {
-    name?: string;
-    avatarUrl?: string;
-}
 
 export type BaseAIResponseMetadataV3 = {
     /** The model that generated this message */

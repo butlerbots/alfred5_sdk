@@ -1,14 +1,14 @@
-import { AIResponseV4 } from "./ai_response_v4";
-import { ErrorCode } from "../error";
+import { AIResponseV3 } from "./ai_response_v3";
+import { ErrorCode } from "../../error";
 
-export type RequestBaseResponsePayloadV4 = {
+export type RequestBaseResponsePayloadV3 = {
     /** Whether the conversation's ending */
     end?: boolean;
     /** Whether the stream is ending */
     quitStream?: boolean;
 }
 
-export type RequestFailResponseV4 = {
+export type RequestFailResponseV3 = {
     success: false;
     data: {
         /** Error code */
@@ -17,17 +17,17 @@ export type RequestFailResponseV4 = {
         error: string;
         /** User facing message */
         message: string;
-    } & RequestBaseResponsePayloadV4;
+    } & RequestBaseResponsePayloadV3;
 }
 
-export type RequestSuccessResponseV4 = {
+export type RequestSuccessResponseV3 = {
     success: true;
     data: {
         /** The AI's response */
-        response: AIResponseV4;
+        response: AIResponseV3;
         /** The convoId, passed in most responses */
         convoId?: string;
-    } & RequestBaseResponsePayloadV4;
+    } & RequestBaseResponsePayloadV3;
 }
 
-export type RequestResponseV4 = RequestFailResponseV4 | RequestSuccessResponseV4;
+export type RequestResponseV3 = RequestFailResponseV3 | RequestSuccessResponseV3;

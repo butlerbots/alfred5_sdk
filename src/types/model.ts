@@ -1,0 +1,1 @@
+export type AI_MODEL = string;
