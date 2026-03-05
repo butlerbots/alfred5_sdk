@@ -214,13 +214,15 @@ export class Conversation {
 
     /** Sends a message into the conversation */
     async send(message: string, cb: (chunk: RequestResponse) => any, options?: DialogueRequestOptions): Promise<void> {
-        const url = this.formatURL(this.endpoints.conversation, {
-            chatId: this.convoId,
+        const payload: Record<string, any> = {
             message,
             ...this.options, // options set for convo
             ...options // overwrite convos for this call
-        });
+        };
 
+        if (this.convoId) payload.chatId = this.convoId;
+
+        const url = this.formatURL(this.endpoints.conversation, payload);
         const sse = new EventSource(url);
 
         sse.addEventListener("message", (event) => {
