@@ -1,5 +1,6 @@
 import { CONFIG } from "./config";
 import { Conversation, ConversationOptions } from "./modules/conversation";
+import { getUsagePolicyData } from "./modules/usage";
 
 type OptionalApiKey<T> = Omit<T, "apiKey"> & {
     /** Optional API key, defaults to API key specified in client */
@@ -42,8 +43,13 @@ export class ButlerBotClient {
     createConversation(config: OptionalApiKey<ConversationOptions> = {}) {
         return new Conversation({ debug: this.debug, apiKey: this.apiKey, serverUrl: this.serverUrl, ...config });
     }
+
+    /** Get current usage policy data */
+    getUsagePolicyData(usagePolicyPath?: string) {
+        return getUsagePolicyData({ serverURL: this.serverUrl, path: usagePolicyPath }, this.apiKey, this.debug);
+    }
 }
 
 // Expose types from subsequent modules
-export { Conversation, ConversationOptions };
 export * from "./types/type_registry";
+export { Conversation, ConversationOptions };

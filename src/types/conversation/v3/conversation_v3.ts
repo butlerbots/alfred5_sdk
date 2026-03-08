@@ -125,40 +125,15 @@ export type ResponseMetadata = {
     }
     /** Token usage breakdown */
     tokens: TokenUsage;
-    /** The cost breakdown */
+    /** The cost of the current turn */
     cost: {
-        /** The cost of the current turn */
-        turnCost?: ModelMessageCost
-        /** The current user's usage cost */
-        dailyUsageCost: number;
-        /** The user's cost limit for the conversation (e.g., daily limit) */
-        dailyUsageCostLimit: number;
-    };
-    /** Usage budget info */
-    limit: {
-        /** Current usage cost as a percentage of daily limit (0–1) */
-        percentage: number;
-        /** Human-readable percentage (e.g. "42.3%") */
-        percentageDisplay: string;
-        /** Name of the active usage stage */
-        stageName: string;
-    };
-    /** Model switching info (tiered auto-downgrade) */
-    modelSwitching: {
-        /** Whether the model was switched from the user's request */
-        switched: boolean;
-        /** Originally requested model */
-        requestedModel: string;
-        /** Model that was actually used */
-        activeModel: string;
-        /** Usage stage that triggered the switch */
-        stage?: string;
+        turnCost?: ModelMessageCost;
     };
     /** Response timing */
     timing: {
-        /** Milliseconds from request start to first streamed event */
+        /** Milliseconds from turn start to first streamed event */
         firstEventMs: number;
-        /** Total response time in milliseconds */
+        /** Total turn time in milliseconds */
         totalMs: number;
     };
 }

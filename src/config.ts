@@ -13,6 +13,11 @@ export const CONFIG = {
             chats: {
                 v1: { base: "/api/convo/get/history" }
             }
+        },
+        usage: {
+            policy: {
+                v3: { base: "/user/usage/v3/policy" },
+            }
         }
     }
 }

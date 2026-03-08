@@ -2,6 +2,7 @@ import { EventSource } from "eventsource";
 import { CONFIG } from "../config";
 import { RequestResponseV3 } from "../types/type_registry";
 import { ConversationStateResponse } from "../types/state/convo_state_response";
+import { formatURL } from "../util/url_formatter";
 
 export type DialogueRequestParams = {
     /** Unique identifier for the chat session */
@@ -169,36 +170,13 @@ export class Conversation {
         return this.options?.personality;
     }
 
-    // HELPERS
-
-    formatURL(url: string, params: Object = {}) {
-        const fParams: { api_key: string } = {
-            api_key: this.apiKey,
-            ...params
-        }
-        const paramQuery = new URLSearchParams(fParams as any).toString();
-        const fUrl = `${url}?${paramQuery}`;
-
-        if (this.debug) {
-            const debugUrl = new URL(fUrl);
-            const apiKey = debugUrl.searchParams.get('api_key');
-            if (apiKey) {
-                const obscuredKey = apiKey.length > 6 ? `${apiKey.slice(0, 3)}...${apiKey.slice(-3)}` : '***';
-                debugUrl.searchParams.set('api_key', obscuredKey);
-            }
-            console.log(`[Formatting URL ${debugUrl.toString()}]`);
-        }
-
-        return fUrl;
-    }
-
     // GETTERS
 
     /** Fetches the conversation state from the server, including message history and metadata */
     async fetchState() {
         if (!this.convoId) throw new Error("Conversation ID is not set");
 
-        const url = this.formatURL(`${this.endpoints.history}/${this.convoId}`);
+        const url = formatURL(`${this.endpoints.history}/${this.convoId}`, undefined, { apiKey: this.apiKey, debug: this.debug });
         const response = await fetch(url);
 
         if (!response.ok) {
@@ -222,7 +200,7 @@ export class Conversation {
 
         if (this.convoId) payload.chatId = this.convoId;
 
-        const url = this.formatURL(this.endpoints.conversation, payload);
+        const url = formatURL(this.endpoints.conversation, payload, { apiKey: this.apiKey, debug: this.debug });
         const sse = new EventSource(url);
 
         sse.addEventListener("message", (event) => {
