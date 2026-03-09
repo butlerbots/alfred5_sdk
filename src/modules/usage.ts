@@ -15,7 +15,7 @@ export async function getUsagePolicyData(options: UsagePolicyDataOptions): Promi
 
     const url = formatURL(useEndpoint, {}, { apiKey: options.apiKey, debug: options.debug });
     const response = await fetch(url);
-    const data = await response.json();
+    const data = await response.json() as { success: boolean; policy?: UsagePolicyData; error?: string };
 
     if (!response.ok) {
         const errorText = await response.text();
@@ -26,5 +26,9 @@ export async function getUsagePolicyData(options: UsagePolicyDataOptions): Promi
         throw new Error(`API error while fetching usage policy data: ${data.error || 'Unknown error'}`);
     }
 
-    return data as UsagePolicyData;
+    if (!data.policy) {
+        throw new Error(`API error while fetching usage policy data: ${data.error || 'Unknown error'}`);
+    }
+
+    return data.policy as UsagePolicyData;
 }
