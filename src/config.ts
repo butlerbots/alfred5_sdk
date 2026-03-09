@@ -16,7 +16,7 @@ export const CONFIG = {
         },
         usage: {
             policy: {
-                v3: { base: "/user/usage/v3/policy" },
+                v3: { base: "/api/user/usage/v3/policy" },
             }
         }
     }
