@@ -1,6 +1,6 @@
 import { EventSource } from "eventsource";
 import { CONFIG } from "../config";
-import { RequestResponseV3 } from "../types/type_registry";
+import { RequestResponseV3, RequestResponseV4 } from "../types/type_registry";
 import { ConversationStateResponse } from "../types/state/convo_state_response";
 import { formatURL } from "../util/url_formatter";
 
@@ -45,8 +45,8 @@ export type ConversationOptions = {
     chatApiV?: APIPath;
 }
 
-const DEFAULT_CONVO_API_V: APIPath = "v3";
-export type RequestResponse = RequestResponseV3;
+const DEFAULT_CONVO_API_V: APIPath = "v4";
+export type RequestResponse = RequestResponseV4;
 
 export class Conversation {
     convoId?: string;
