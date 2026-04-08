@@ -23,6 +23,15 @@ export type UsagePolicy = {
     maxConvoLength?: number,
 }
 
+export type UsagePolicyDataUsage = {
+    /** The current user's usage cost for this time period */
+    usage: number;
+    /** The user's limit for the time period */
+    usageLimit: number;
+    /** Explanation of limit for this time period */
+    limitBreakdown: { description: string; addition: number }[];
+}
+
 export type UsagePolicyData = {
     limit: {
         /** Current usage cost as a percentage of daily limit (0–1) */
@@ -38,11 +47,12 @@ export type UsagePolicyData = {
         activeModel?: string;
     },
     /** Usage policy information */
-    usagePolicy: UsagePolicy,
-    daily: {
-        /** The current user's usage cost */
-        dailyUsageCost: number;
-        /** The user's cost limit for the conversation (e.g., daily limit) */
-        dailyUsageCostLimit: number;
+    usagePolicy: UsagePolicy;
+    /** Usage information */
+    usage: {
+        /** Daily usage data */
+        daily: UsagePolicyDataUsage;
+        /** Weekly usage data */
+        weekly: UsagePolicyDataUsage;
     }
 }
