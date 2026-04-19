@@ -1,4 +1,4 @@
-import { ConvoStatusEvent, FileEvent, MessageEvent, ModelMessageCost, ReasoningEvent, ResponseMetadata, ResponseStatusEvent, TokenUsage, ToolEvent } from "../../conversation/v3/conversation_v3";
+import { ConvoStatusEvent, FileEvent, MessageEvent, ModelMessageCost, ReasoningEvent, ResponseMetadata, ResponseStatusEvent, TokenUsage, ToolEvent, UserMessageEvent } from "../../conversation/v3/conversation_v3";
 import { ErrorCode } from "../../error";
 
 export type AIChatResultFailV4 = { success: false, errorcode: ErrorCode };
@@ -9,6 +9,7 @@ export type TokenUsageV4 = TokenUsage;
 export type ModelMessageCostV4 = ModelMessageCost;
 export type ResponseStatusMetadataV4 = ResponseMetadata;
 
+export type UserMessageResponseV4 = UserMessageEvent;
 export type AIMessageResponseV4 = MessageEvent;
 export type AIReasoningResponseV4 = ReasoningEvent;
 export type AIFileResponseV4 = FileEvent;

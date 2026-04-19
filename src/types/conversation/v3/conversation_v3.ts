@@ -200,6 +200,16 @@ export type BaseResponseMetadata = {
     participantId?: string;
 }
 
+/** A user message event */
+export type UserMessageEvent = {
+    type: "user_message";
+    payload: MessagePayload;
+    metadata: {
+        userId: string;
+        timestamp: number;
+    };
+}
+
 export type MessageEvent = {
     type: "message";
     payload: MessagePayload;
