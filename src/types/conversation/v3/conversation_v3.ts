@@ -169,11 +169,12 @@ export type ToolPayload = {
 };
 
 export type ConvoStatusPayload = {
-    /** Whether the entire AI convo has been disabled, a disabled convo cannot be restarted */
-    disabled?: boolean;
-    /** Whether the AI convo has been stopped, a stopped convo can be restarted
-         * although just because it's not stopped does not necasserily mean it's an ongoing conversation */
-    stopped?: boolean;
+    /** The state of the conversation.
+     * - `disabled`: The conversation has been permanently disabled and cannot be restarted.
+     * - `stopped`: The conversation has been stopped but can be restarted.
+     * - `started`: The conversation has been started/restarted.
+     */
+    state?: "disabled" | "stopped" | "started";
     /** Short summary generated for this conversation */
     shortSummary?: string
 };
