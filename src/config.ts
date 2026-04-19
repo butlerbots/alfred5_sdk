@@ -14,6 +14,9 @@ export const CONFIG = {
                 v1: { base: "/api/convo/get/history" }
             }
         },
+        stream: {
+            v4: { base: "/api/alfred/v4/chat/stream" }
+        },
         usage: {
             policy: {
                 v3: { base: "/api/user/usage/v3/policy" },

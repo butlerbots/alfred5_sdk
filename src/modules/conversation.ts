@@ -4,6 +4,11 @@ import { RequestResponseV3, RequestResponseV4 } from "../types/type_registry";
 import { ConversationStateResponse } from "../types/state/convo_state_response";
 import { formatURL } from "../util/url_formatter";
 
+type SSEHandlerOptions = {
+    /** Handler for when the ConvoId is received */
+    onConvoId?: (convoId: string) => any;
+}
+
 export type DialogueRequestParams = {
     /** Unique identifier for the chat session */
     chatId?: string;
@@ -39,6 +44,8 @@ export type ConversationOptions = {
     convoPath?: string;
     /** The path to append to the server URL specifying the history API endpoint to use */
     historyPath?: string;
+    /** The path to append to the server URL specifying the stream API endpoint to use */
+    streamPath?: string;
     /** Whether to enable debug logs */
     debug?: boolean;
     /** The API version to use */
@@ -57,6 +64,7 @@ export class Conversation {
     private endpoints: {
         conversation: string,
         history: string,
+        stream: string,
     }
 
     constructor(config: ConversationOptions) {
@@ -66,6 +74,7 @@ export class Conversation {
         this.endpoints = {
             conversation: serverUrl + (config.convoPath || config.path || CONFIG.paths.conversation[config.chatApiV || DEFAULT_CONVO_API_V].base),
             history: serverUrl + (config.historyPath || CONFIG.paths.history.chat.v1.base),
+            stream: serverUrl + (config.streamPath || CONFIG.paths.stream.v4.base),
         }
 
         this.apiKey = config.apiKey;
@@ -92,6 +101,12 @@ export class Conversation {
     /** Sets the history endpoint where the quest is sent to, appended to server URL */
     setHistoryEndpoint(historyEndpoint: string) {
         this.endpoints.history = historyEndpoint;
+        return this;
+    }
+
+    /** Sets the stream endpoint where the request is sent to, appended to server URL */
+    setStreamEndpoint(streamEndpoint: string) {
+        this.endpoints.stream = streamEndpoint;
         return this;
     }
 
@@ -150,6 +165,11 @@ export class Conversation {
         return this.endpoints.history;
     }
 
+    /** Gets the current stream endpoint */
+    getStreamEndpoint() {
+        return this.endpoints.stream;
+    }
+
     /** Gets the current options object */
     getModel() {
         return this.options?.model;
@@ -170,6 +190,26 @@ export class Conversation {
         return this.options?.personality;
     }
 
+    // SSE HANDLER
+
+    private handleSSE(url: string, cb: (chunk: RequestResponse) => any, options: SSEHandlerOptions = {}) {
+        const sse = new EventSource(url);
+
+        sse.addEventListener("message", (event) => {
+            const data = JSON.parse(event.data) as RequestResponse;
+
+            const convoId = data.success ? data.data.convoId : undefined;
+            if (convoId && options.onConvoId) options.onConvoId(convoId);
+
+            cb(data);
+            if (data.data.quitStream) sse.close();
+        });
+
+        sse.addEventListener("error", (event) => {
+            if (this.debug) console.warn(`[Stream Error: ${url}]`, event);
+        });
+    }
+
     // GETTERS
 
     /** Fetches the conversation state from the server, including message history and metadata */
@@ -188,10 +228,18 @@ export class Conversation {
         return data;
     }
 
+    /** Fetches the conversation stream from the server */
+    fetchStream(cb: (chunk: RequestResponse) => any) {
+        if (!this.convoId) throw new Error("Conversation ID is not set");
+
+        const url = formatURL(this.endpoints.stream, { chatId: this.convoId }, { apiKey: this.apiKey, debug: this.debug });
+        return this.handleSSE(url, cb);
+    }
+
     // LIFE CYCLE
 
     /** Sends a message into the conversation */
-    async send(message: string, cb: (chunk: RequestResponse) => any, options?: DialogueRequestOptions): Promise<void> {
+    send(message: string, cb: (chunk: RequestResponse) => any, options?: DialogueRequestOptions) {
         const payload: Record<string, any> = {
             message,
             ...this.options, // options set for convo
@@ -201,30 +249,6 @@ export class Conversation {
         if (this.convoId) payload.chatId = this.convoId;
 
         const url = formatURL(this.endpoints.conversation, payload, { apiKey: this.apiKey, debug: this.debug });
-        const sse = new EventSource(url);
-
-        sse.addEventListener("message", (event) => {
-            const data = JSON.parse(event.data) as RequestResponse;
-
-            const convoId = data.success ? data.data.convoId : undefined;
-            if (convoId) this.convoId = convoId; // update convo id from response
-
-            cb(data);
-            if (data.data.quitStream) sse.close();
-        });
-
-        sse.addEventListener("error", (event) => {
-            if (this.debug) console.warn(`[Stream Error: ${url}]`, event);
-            cb({
-                success: false,
-                data: {
-                    code: "STREAM_ERROR",
-                    error: "Stream error",
-                    message: event.message || "An error occurred while streaming",
-                    quitStream: true
-                }
-            });
-            sse.close();
-        });
+        return this.handleSSE(url, cb, { onConvoId: (convoId) => this.convoId = convoId });
     }
 }
