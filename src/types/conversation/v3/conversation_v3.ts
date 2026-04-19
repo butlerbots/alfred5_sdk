@@ -204,9 +204,8 @@ export type BaseResponseMetadata = {
 export type UserMessageEvent = {
     type: "user_message";
     payload: MessagePayload;
-    metadata: {
+    metadata: BaseResponseMetadata & {
         userId: string;
-        timestamp: number;
     };
 }
 
