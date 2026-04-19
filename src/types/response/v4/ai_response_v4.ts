@@ -17,4 +17,4 @@ export type AIResponseStatusResponseV4 = ResponseStatusEvent;
 export type AIConvoStatusResponseV4 = ConvoStatusEvent;
 export type AIToolResponseV4 = ToolEvent;
 
-export type AIResponseV4 = AIMessageResponseV4 | AIToolResponseV4 | AIConvoStatusResponseV4 | AIResponseStatusResponseV4 | AIFileResponseV4 | AIReasoningResponseV4;
+export type AIResponseV4 = AIMessageResponseV4 | AIToolResponseV4 | AIConvoStatusResponseV4 | AIResponseStatusResponseV4 | AIFileResponseV4 | AIReasoningResponseV4 | UserMessageResponseV4;
