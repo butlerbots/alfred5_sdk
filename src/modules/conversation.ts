@@ -208,6 +208,8 @@ export class Conversation {
         sse.addEventListener("error", (event) => {
             if (this.debug) console.warn(`[Stream Error: ${url}]`, event);
         });
+
+        return sse;
     }
 
     // GETTERS
