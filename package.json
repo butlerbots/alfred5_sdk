@@ -1,6 +1,6 @@
 {
 	"name": "@butlerbot/sdk",
-	"version": "0.0.10",
+	"version": "0.0.11",
 	"description": "The official ButlerBot SDK",
 	"main": "dist/index.js",
 	"types": "dist/index.d.ts",

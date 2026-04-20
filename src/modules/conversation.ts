@@ -44,8 +44,10 @@ export type ConversationOptions = {
     convoPath?: string;
     /** The path to append to the server URL specifying the history API endpoint to use */
     historyPath?: string;
-    /** The path to append to the server URL specifying the stream API endpoint to use */
-    streamPath?: string;
+    /** The path to append to the server URL specifying the progress API endpoint to use */
+    progressPath?: string;
+    /** The path to append to the server URL specifying the progress stream API endpoint to use */
+    progressStreamPath?: string;
     /** Whether to enable debug logs */
     debug?: boolean;
     /** The API version to use */
@@ -64,7 +66,8 @@ export class Conversation {
     private endpoints: {
         conversation: string,
         history: string,
-        stream: string,
+        progressStream: string,
+        progress: string,
     }
 
     constructor(config: ConversationOptions) {
@@ -74,7 +77,8 @@ export class Conversation {
         this.endpoints = {
             conversation: serverUrl + (config.convoPath || config.path || CONFIG.paths.conversation[config.chatApiV || DEFAULT_CONVO_API_V].base),
             history: serverUrl + (config.historyPath || CONFIG.paths.history.chat.v1.base),
-            stream: serverUrl + (config.streamPath || CONFIG.paths.stream.v4.base),
+            progressStream: serverUrl + (config.progressStreamPath || CONFIG.paths.progress.v4.stream),
+            progress: serverUrl + (config.progressPath || CONFIG.paths.progress.v4.base),
         }
 
         this.apiKey = config.apiKey;
@@ -104,9 +108,15 @@ export class Conversation {
         return this;
     }
 
-    /** Sets the stream endpoint where the request is sent to, appended to server URL */
-    setStreamEndpoint(streamEndpoint: string) {
-        this.endpoints.stream = streamEndpoint;
+    /** Sets the progress stream endpoint where the request is sent to, appended to server URL */
+    setProgressStreamEndpoint(progressStreamEndpoint: string) {
+        this.endpoints.progressStream = progressStreamEndpoint;
+        return this;
+    }
+
+    /** Sets the progress endpoint where the request is sent to, appended to server URL */
+    setProgressEndpoint(progressEndpoint: string) {
+        this.endpoints.progress = progressEndpoint;
         return this;
     }
 
@@ -165,9 +175,14 @@ export class Conversation {
         return this.endpoints.history;
     }
 
-    /** Gets the current stream endpoint */
-    getStreamEndpoint() {
-        return this.endpoints.stream;
+    /** Gets the current progress stream endpoint */
+    getProgressStreamEndpoint() {
+        return this.endpoints.progressStream;
+    }
+
+    /** Gets the current progress endpoint */
+    getProgressEndpoint() {
+        return this.endpoints.progress;
     }
 
     /** Gets the current options object */
@@ -230,12 +245,28 @@ export class Conversation {
         return data;
     }
 
-    /** Fetches the conversation stream from the server */
-    fetchStream(cb: (chunk: RequestResponse) => any) {
+    /** Fetches the conversation progress stream from the server */
+    fetchProgressStream(cb: (chunk: RequestResponse) => any) {
         if (!this.convoId) throw new Error("Conversation ID is not set");
 
-        const url = formatURL(this.endpoints.stream, { chatId: this.convoId }, { apiKey: this.apiKey, debug: this.debug });
+        const url = formatURL(this.endpoints.progressStream, { chatId: this.convoId }, { apiKey: this.apiKey, debug: this.debug });
         return this.handleSSE(url, cb);
+    }
+
+    /** Fetches the conversation progress from the server */
+    async fetchProgress(): Promise<RequestResponse[]> {
+        if (!this.convoId) throw new Error("Conversation ID is not set");
+
+        const url = formatURL(this.endpoints.progress, { chatId: this.convoId }, { apiKey: this.apiKey, debug: this.debug });
+        const response = await fetch(url, { headers: { "Authorization": `Bearer ${this.apiKey}` } })
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Failed to fetch conversation progress: ${response.status} ${response.statusText} - ${errorText}`);
+        }
+
+        const data = await response.json() as { success: boolean; events: RequestResponse[] };
+        return data.events;
     }
 
     // LIFE CYCLE

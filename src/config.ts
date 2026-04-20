@@ -14,8 +14,11 @@ export const CONFIG = {
                 v1: { base: "/api/convo/get/history" }
             }
         },
-        stream: {
-            v4: { base: "/api/alfred/v4/chat/stream" }
+        progress: {
+            v4: {
+                base: "/api/alfred/v4/chat/progress",
+                stream: "/api/alfred/v4/chat/progress/stream",
+            }
         },
         usage: {
             policy: {
