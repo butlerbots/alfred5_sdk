@@ -62,6 +62,7 @@ export class Conversation {
     apiKey: string;
     private debug: boolean;
     private options?: DialogueRequestOptions
+    private events: Map<string, Map<string, Function>> = new Map();
 
     private endpoints: {
         conversation: string,
@@ -205,6 +206,68 @@ export class Conversation {
         return this.options?.personality;
     }
 
+    // EVENT EMITTER
+
+    private hasEmitter(event: string) {
+        return this.events.has(event);
+    }
+
+    private addEmitter(event: string) {
+        if (!this.hasEmitter(event)) this.events.set(event, new Map());
+    }
+
+    private removeEmitter(event: string) {
+        this.events.delete(event);
+    }
+
+    private addListener(event: string, cb: Function) {
+        if (!this.hasEmitter(event)) this.addEmitter(event);
+        const listeners = this.events.get(event)!;
+        const id = crypto.randomUUID();
+        listeners.set(id, cb);
+        return id;
+    }
+
+    private removeListener(event: string, id: string) {
+        const listeners = this.events.get(event);
+        if (listeners) listeners.delete(id);
+    }
+
+    private emit(event: string, ...args: any[]) {
+        const listeners = this.events.get(event);
+        if (listeners) listeners.forEach(listener => listener(...args));
+    }
+
+    /** 
+     * Fires when the conversation ID is set 
+     * if convoId is already set when this is called, fires immediately
+     * */
+    onConvoId(cb: (convoId: string) => any): string {
+        if (this.convoId) cb(this.convoId);
+        return this.addListener("convoId", cb);
+    }
+
+    /** Removes a convoId listener */
+    offConvoId(listenerId: string) {
+        this.removeListener("convoId", listenerId);
+    }
+
+    /** 
+     * Fires once when the conversation ID is set, then removes the listener.
+     * If convoId is already set, fires immediately
+     */
+    onceConvoId(cb: (convoId: string) => any) {
+        if (this.convoId) {
+            cb(this.convoId);
+            return;
+        }
+        const id = this.addListener("convoId", (convoId: string) => {
+            cb(convoId);
+            this.offConvoId(id);
+        });
+        return id;
+    }
+
     // SSE HANDLER
 
     private handleSSE(url: string, cb: (chunk: RequestResponse) => any, options: SSEHandlerOptions = {}) {
@@ -287,6 +350,11 @@ export class Conversation {
         if (this.convoId) payload.chatId = this.convoId;
 
         const url = formatURL(this.endpoints.conversation, payload, { apiKey: this.apiKey, debug: this.debug });
-        return this.handleSSE(url, cb, { onConvoId: (convoId) => this.convoId = convoId });
+        return this.handleSSE(url, cb, {
+            onConvoId: (convoId) => {
+                this.convoId = convoId;
+                this.emit("convoId", convoId);
+            }
+        });
     }
 }
