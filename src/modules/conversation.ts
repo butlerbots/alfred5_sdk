@@ -3,6 +3,7 @@ import { CONFIG } from "../config";
 import { RequestResponseV3, RequestResponseV4 } from "../types/type_registry";
 import { ConversationStateResponse } from "../types/state/convo_state_response";
 import { formatURL } from "../util/url_formatter";
+import { TurnProgressEntry } from "../types/response/v4/turn_registry_v4";
 
 type SSEHandlerOptions = {
     /** Handler for when the ConvoId is received */
@@ -320,7 +321,7 @@ export class Conversation {
      * Fetches the conversation progress from the server 
      * Returns undefined if no active turn progress
     */
-    async fetchProgress(): Promise<RequestResponse[] | undefined> {
+    async fetchProgress(): Promise<TurnProgressEntry[] | undefined> {
         if (!this.convoId) throw new Error("Conversation ID is not set");
 
         const url = formatURL(this.endpoints.progress, { chatId: this.convoId }, { apiKey: this.apiKey, debug: this.debug });
@@ -333,7 +334,7 @@ export class Conversation {
 
         if (response.status === 204) return undefined; // No content
 
-        const data = await response.json() as { success: boolean; events: RequestResponse[] };
+        const data = await response.json() as { success: boolean, events: TurnProgressEntry[] };
         return data.events;
     }
 
