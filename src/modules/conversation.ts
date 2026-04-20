@@ -265,6 +265,8 @@ export class Conversation {
             throw new Error(`Failed to fetch conversation progress: ${response.status} ${response.statusText} - ${errorText}`);
         }
 
+        if (response.status === 204) return []; // No content, return empty array
+
         const data = await response.json() as { success: boolean; events: RequestResponse[] };
         return data.events;
     }
