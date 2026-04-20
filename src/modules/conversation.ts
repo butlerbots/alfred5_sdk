@@ -258,7 +258,7 @@ export class Conversation {
         if (!this.convoId) throw new Error("Conversation ID is not set");
 
         const url = formatURL(this.endpoints.progress, { chatId: this.convoId }, { apiKey: this.apiKey, debug: this.debug });
-        const response = await fetch(url, { headers: { "Authorization": `Bearer ${this.apiKey}` } })
+        const response = await fetch(url)
 
         if (!response.ok) {
             const errorText = await response.text();
