@@ -321,11 +321,11 @@ export class Conversation {
      * Fetches the conversation progress from the server 
      * Returns undefined if no active turn progress
     */
-    async fetchProgress(): Promise<TurnProgressEntry[] | undefined> {
+    async fetchProgress(options?: { lastEventId?: string, includeCompleted?: boolean }): Promise<TurnProgressEntry[] | undefined> {
         if (!this.convoId) throw new Error("Conversation ID is not set");
 
-        const url = formatURL(this.endpoints.progress, { chatId: this.convoId }, { apiKey: this.apiKey, debug: this.debug });
-        const response = await fetch(url)
+        const url = formatURL(this.endpoints.progress, { chatId: this.convoId, includeCompleted: options?.includeCompleted }, { apiKey: this.apiKey, debug: this.debug });
+        const response = await fetch(url, { headers: options?.lastEventId ? { "last-event-id": options.lastEventId } : undefined });
 
         if (!response.ok) {
             const errorText = await response.text();
