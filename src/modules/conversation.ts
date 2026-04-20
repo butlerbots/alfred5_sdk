@@ -253,8 +253,11 @@ export class Conversation {
         return this.handleSSE(url, cb);
     }
 
-    /** Fetches the conversation progress from the server */
-    async fetchProgress(): Promise<RequestResponse[]> {
+    /** 
+     * Fetches the conversation progress from the server 
+     * Returns undefined if no active turn progress
+    */
+    async fetchProgress(): Promise<RequestResponse[] | undefined> {
         if (!this.convoId) throw new Error("Conversation ID is not set");
 
         const url = formatURL(this.endpoints.progress, { chatId: this.convoId }, { apiKey: this.apiKey, debug: this.debug });
@@ -265,7 +268,7 @@ export class Conversation {
             throw new Error(`Failed to fetch conversation progress: ${response.status} ${response.statusText} - ${errorText}`);
         }
 
-        if (response.status === 204) return []; // No content, return empty array
+        if (response.status === 204) return undefined; // No content
 
         const data = await response.json() as { success: boolean; events: RequestResponse[] };
         return data.events;
