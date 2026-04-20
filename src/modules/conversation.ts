@@ -324,7 +324,13 @@ export class Conversation {
     async fetchProgress(options?: { lastEventId?: string, includeCompleted?: boolean }): Promise<TurnProgressEntry[] | undefined> {
         if (!this.convoId) throw new Error("Conversation ID is not set");
 
-        const url = formatURL(this.endpoints.progress, { chatId: this.convoId, includeCompleted: options?.includeCompleted }, { apiKey: this.apiKey, debug: this.debug });
+        const payload: Record<string, any> = {
+            chatId: this.convoId,
+        }
+
+        if (options?.includeCompleted !== undefined) payload["includeCompleted"] = options.includeCompleted;
+
+        const url = formatURL(this.endpoints.progress, payload, { apiKey: this.apiKey, debug: this.debug });
         const response = await fetch(url, { headers: options?.lastEventId ? { "last-event-id": options.lastEventId } : undefined });
 
         if (!response.ok) {
