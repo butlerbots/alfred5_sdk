@@ -1,9 +1,17 @@
-import { EventSource } from "eventsource";
 import { CONFIG } from "../config";
 import { RequestResponseV3, RequestResponseV4 } from "../types/type_registry";
 import { ConversationStateResponse } from "../types/state/convo_state_response";
 import { formatURL } from "../util/url_formatter";
 import { TurnProgressEntry } from "../types/response/v4/turn_registry_v4";
+
+type EventSourceMessageEvent = { data: string };
+type EventSourceInstance = {
+    addEventListener(type: "message", listener: (event: EventSourceMessageEvent) => void): void;
+    addEventListener(type: "error", listener: (event: unknown) => void): void;
+    close(): void;
+};
+
+const EventSourceCtor = require("eventsource").EventSource as new (url: string) => EventSourceInstance;
 
 type SSEHandlerOptions = {
     /** Handler for when the ConvoId is received */
@@ -272,9 +280,9 @@ export class Conversation {
     // SSE HANDLER
 
     private handleSSE(url: string, cb: (chunk: RequestResponse) => any, options: SSEHandlerOptions = {}) {
-        const sse = new EventSource(url);
+        const sse = new EventSourceCtor(url);
 
-        sse.addEventListener("message", (event) => {
+        sse.addEventListener("message", (event: EventSourceMessageEvent) => {
             const data = JSON.parse(event.data) as RequestResponse;
 
             const convoId = data.success ? data.data.convoId : undefined;
@@ -284,7 +292,7 @@ export class Conversation {
             if (data.data.quitStream) sse.close();
         });
 
-        sse.addEventListener("error", (event) => {
+        sse.addEventListener("error", (event: unknown) => {
             if (this.debug) console.warn(`[Stream Error: ${url}]`, event);
         });
 

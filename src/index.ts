@@ -53,3 +53,6 @@ export class ButlerBotClient {
 // Expose types from subsequent modules
 export * from "./types/type_registry";
 export { Conversation, ConversationOptions };
+
+// ClientLink transport
+export * from "./modules/client_link/index";
