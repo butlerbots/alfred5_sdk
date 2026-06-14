@@ -1,9 +1,11 @@
 import { EventSource } from "eventsource";
-import { CONFIG } from "../config";
+import { CONFIG, APIPath } from "../config";
 import { RequestResponseV3, RequestResponseV4 } from "../types/type_registry";
+import { RequestResponseV5 } from "../types/response/v5/dialogue_response_v5";
 import { ConversationStateResponse } from "../types/state/convo_state_response";
 import { formatURL } from "../util/url_formatter";
 import { TurnProgressEntry } from "../types/response/v4/turn_registry_v4";
+import { TurnProgressEntryV5 } from "../types/response/v5/turn_registry_v5";
 
 type SSEHandlerOptions = {
     /** Handler for when the ConvoId is received */
@@ -27,9 +29,21 @@ export type DialogueRequestParams = {
 
 export type DialogueRequestOptions = Omit<Omit<DialogueRequestParams, "message">, "chatId">;
 
-type APIPath = keyof typeof CONFIG.paths.conversation;
+export interface RequestResponseByVersion {
+    v3: RequestResponseV3;
+    v4: RequestResponseV4;
+    v5: RequestResponseV5;
+}
 
-export type ConversationOptions = {
+interface TurnProgressEntryByVersion {
+    v4: TurnProgressEntry;
+    v5: TurnProgressEntryV5;
+}
+
+export type TurnProgressEntryForVersion<V extends APIPath> =
+    V extends keyof TurnProgressEntryByVersion ? TurnProgressEntryByVersion[V] : TurnProgressEntry;
+
+export type ConversationOptions<V extends APIPath = "v4"> = {
     /** The conversation ID to load the conversation from, server will error if this convo id doesn't exist */
     convoId?: string;
     /** The API key to use */
@@ -52,16 +66,16 @@ export type ConversationOptions = {
     /** Whether to enable debug logs */
     debug?: boolean;
     /** The API version to use */
-    chatApiV?: APIPath;
+    chatApiV?: V;
 }
 
 const DEFAULT_CONVO_API_V: APIPath = "v4";
-export type RequestResponse = RequestResponseV4;
 
-export class Conversation {
+export class Conversation<V extends APIPath = "v4"> {
     convoId?: string;
     apiKey: string;
     private debug: boolean;
+    private chatApiV: V;
     private options?: DialogueRequestOptions
     private events: Map<string, Map<string, Function>> = new Map();
 
@@ -72,15 +86,19 @@ export class Conversation {
         progress: string,
     }
 
-    constructor(config: ConversationOptions) {
+    constructor(config: ConversationOptions<V>) {
         this.convoId = config.convoId;
+        this.chatApiV = (config.chatApiV || DEFAULT_CONVO_API_V) as V;
 
         const serverUrl = config.serverUrl || CONFIG.server;
+
+        const progressConfig = (CONFIG.paths.progress as Record<string, { base: string; stream: string } | undefined>)[this.chatApiV];
+
         this.endpoints = {
-            conversation: serverUrl + (config.convoPath || config.path || CONFIG.paths.conversation[config.chatApiV || DEFAULT_CONVO_API_V].base),
+            conversation: serverUrl + (config.convoPath || config.path || CONFIG.paths.conversation[this.chatApiV].base),
             history: serverUrl + (config.historyPath || CONFIG.paths.history.chat.v1.base),
-            progressStream: serverUrl + (config.progressStreamPath || CONFIG.paths.progress.v4.stream),
-            progress: serverUrl + (config.progressPath || CONFIG.paths.progress.v4.base),
+            progressStream: serverUrl + (config.progressStreamPath || (progressConfig?.stream ?? CONFIG.paths.progress.v4.stream)),
+            progress: serverUrl + (config.progressPath || (progressConfig?.base ?? CONFIG.paths.progress.v4.base)),
         }
 
         this.apiKey = config.apiKey;
@@ -271,11 +289,11 @@ export class Conversation {
 
     // SSE HANDLER
 
-    private handleSSE(url: string, cb: (chunk: RequestResponse) => any, options: SSEHandlerOptions = {}) {
+    private handleSSE(url: string, cb: (chunk: RequestResponseByVersion[V]) => any, options: SSEHandlerOptions = {}) {
         const sse = new EventSource(url);
 
         sse.addEventListener("message", (event) => {
-            const data = JSON.parse(event.data) as RequestResponse;
+            const data = JSON.parse(event.data) as RequestResponseByVersion[V];
 
             const convoId = data.success ? data.data.convoId : undefined;
             if (convoId && options.onConvoId) options.onConvoId(convoId);
@@ -310,7 +328,7 @@ export class Conversation {
     }
 
     /** Fetches the conversation progress stream from the server */
-    fetchProgressStream(cb: (chunk: RequestResponse) => any) {
+    fetchProgressStream(cb: (chunk: RequestResponseByVersion[V]) => any) {
         if (!this.convoId) throw new Error("Conversation ID is not set");
 
         const url = formatURL(this.endpoints.progressStream, { chatId: this.convoId }, { apiKey: this.apiKey, debug: this.debug });
@@ -321,7 +339,7 @@ export class Conversation {
      * Fetches the conversation progress from the server 
      * Returns undefined if no active turn progress
     */
-    async fetchProgress(options?: { lastEventId?: string, includeCompleted?: boolean }): Promise<TurnProgressEntry[] | undefined> {
+    async fetchProgress(options?: { lastEventId?: string, includeCompleted?: boolean }): Promise<TurnProgressEntryForVersion<V>[] | undefined> {
         if (!this.convoId) throw new Error("Conversation ID is not set");
 
         const payload: Record<string, any> = {
@@ -340,14 +358,14 @@ export class Conversation {
 
         if (response.status === 204) return undefined; // No content
 
-        const data = await response.json() as { success: boolean, events: TurnProgressEntry[] };
+        const data = await response.json() as { success: boolean, events: TurnProgressEntryForVersion<V>[] };
         return data.events;
     }
 
     // LIFE CYCLE
 
     /** Sends a message into the conversation */
-    send(message: string, cb: (chunk: RequestResponse) => any, options?: DialogueRequestOptions) {
+    send(message: string, cb: (chunk: RequestResponseByVersion[V]) => any, options?: DialogueRequestOptions) {
         const payload: Record<string, any> = {
             message,
             ...this.options, // options set for convo

@@ -5,6 +5,7 @@ export const CONFIG = {
         conversation: {
             v3: { base: "/api/alfred/v3/chat" },
             v4: { base: "/api/alfred/v4/chat" },
+            v5: { base: "/api/alfred/v5/chat" },
         },
         history: {
             chat: {
@@ -18,7 +19,11 @@ export const CONFIG = {
             v4: {
                 base: "/api/alfred/v4/chat/progress",
                 stream: "/api/alfred/v4/chat/progress/stream",
-            }
+            },
+            v5: {
+                base: "/api/alfred/v5/chat/progress",
+                stream: "/api/alfred/v5/chat/progress/stream",
+            },
         },
         usage: {
             policy: {
@@ -27,3 +32,5 @@ export const CONFIG = {
         }
     }
 }
+
+export type APIPath = keyof typeof CONFIG.paths.conversation;

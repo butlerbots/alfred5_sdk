@@ -1,4 +1,4 @@
-import { CONFIG } from "./config";
+import { CONFIG, APIPath } from "./config";
 import { Conversation, ConversationOptions } from "./modules/conversation";
 import { getUsagePolicyData, UsagePolicyDataOptions } from "./modules/usage";
 
@@ -40,8 +40,8 @@ export class ButlerBotClient {
     }
 
     /** Spawns a new Conversation, inherits api key and server URL */
-    createConversation(config: OptionalApiKey<ConversationOptions> = {}) {
-        return new Conversation({ debug: this.debug, apiKey: this.apiKey, serverUrl: this.serverUrl, ...config });
+    createConversation<V extends APIPath = "v4">(config: OptionalApiKey<ConversationOptions<V>> = {}): Conversation<V> {
+        return new Conversation<V>({ debug: this.debug, apiKey: this.apiKey, serverUrl: this.serverUrl, ...config } as ConversationOptions<V>);
     }
 
     /** Get current usage policy data */
@@ -53,3 +53,4 @@ export class ButlerBotClient {
 // Expose types from subsequent modules
 export * from "./types/type_registry";
 export { Conversation, ConversationOptions };
+export type { APIPath };
