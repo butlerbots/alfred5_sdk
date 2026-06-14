@@ -8,6 +8,7 @@ export type {
     ConversationEvent,
     ConversationEventCallback,
     AIResponseV5,
+    ResponseMetadata as ResponseMetadataV5,
     EngineTurnFinishReason,
     RoutingAttempt,
     RoutingMetadata,
