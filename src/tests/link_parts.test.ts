@@ -61,9 +61,9 @@ describe("Handshake", () => {
     it("carries the service and credential as subprotocols", () => {
         // A browser cannot set headers on a websocket, and a subprotocol keeps the key
         // out of the URL, which is what ends up in access logs.
-        const { url, protocols } = buildHandshake("https://core.butlerbot.net", "link", "ap-abc_123");
+        const { url, protocols } = buildHandshake("https://core.butler.now", "link", "ap-abc_123");
 
-        expect(url).toBe("wss://core.butlerbot.net/?service=link");
+        expect(url).toBe("wss://core.butler.now/?service=link");
         expect(protocols).toEqual(["butler.service.link", "butler.key.ap-abc_123"]);
     });
 
@@ -74,7 +74,7 @@ describe("Handshake", () => {
     it("falls back to the query string for a key a subprotocol cannot carry", () => {
         // Subprotocols are HTTP tokens; a key with a space or comma would break the
         // handshake outright.
-        const { url, protocols } = buildHandshake("https://core.butlerbot.net", "link", "has space");
+        const { url, protocols } = buildHandshake("https://core.butler.now", "link", "has space");
 
         expect(protocols).toEqual(["butler.service.link"]);
         expect(url).toContain("api_key=has+space");

@@ -1,5 +1,5 @@
 export const CONFIG = {
-    server: "https://core.butlerbot.net",
+    server: "https://core.butler.now",
     healthcheckPath: "/api/healthcheck",
     paths: {
         conversation: {

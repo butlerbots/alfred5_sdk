@@ -1,6 +1,6 @@
 {
 	"name": "@butlerbot/sdk",
-	"version": "0.0.18",
+	"version": "0.0.19",
 	"description": "The official ButlerBot SDK",
 	"main": "dist/index.js",
 	"types": "dist/index.d.ts",
@@ -35,7 +35,7 @@
 	"bugs": {
 		"url": "https://github.com/butlerbots/alfred5_sdk/issues"
 	},
-	"homepage": "https://butlerbot.net",
+	"homepage": "https://butler.now",
 	"engines": {
 		"node": ">=18.0.0"
 	},

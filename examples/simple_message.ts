@@ -14,7 +14,7 @@ convo.send("Hello there, what's 1+1", (res) => {
 })
 
 /*
-RESPONSE EXAMPLE [Requesting URL https://core.butlerbot.net/api/alfred/v3/chat?message=Hello+there%2C+what%27s+1%2B1&api_key=you...ere]
+RESPONSE EXAMPLE [Requesting URL https://core.butler.now/api/alfred/v3/chat?message=Hello+there%2C+what%27s+1%2B1&api_key=you...ere]
 message {
   message: 'Good',
   messageId: 'msg-6XVNlz43zm7Nw2WGGzCqJTHE',
