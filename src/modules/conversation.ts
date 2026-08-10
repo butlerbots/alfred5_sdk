@@ -1,16 +1,16 @@
 import { EventSource } from "eventsource";
 import { CONFIG, APIPath } from "../config";
+import type { Link } from "../link/link";
+import { Emitter } from "../util/emitter";
+import { ConversationStream, ConversationTransport } from "./transport";
+import { LinkConversationTransport } from "./transport_link";
+import { SSEConversationTransport, streamSSE } from "./transport_sse";
 import { RequestResponseV3, RequestResponseV4 } from "../types/type_registry";
 import { RequestResponseV5 } from "../types/response/v5/dialogue_response_v5";
 import { ConversationStateResponse } from "../types/state/convo_state_response";
 import { formatURL } from "../util/url_formatter";
 import { TurnProgressEntry } from "../types/response/v4/turn_registry_v4";
 import { TurnProgressEntryV5 } from "../types/response/v5/turn_registry_v5";
-
-type SSEHandlerOptions = {
-    /** Handler for when the ConvoId is received */
-    onConvoId?: (convoId: string) => any;
-}
 
 export type DialogueRequestParams = {
     /** Unique identifier for the chat session */
@@ -67,6 +67,14 @@ export type ConversationOptions<V extends APIPath = "v4"> = {
     debug?: boolean;
     /** The API version to use */
     chatApiV?: V;
+    /**
+     * How turns are carried.
+     *
+     * `"sse"` (the default) opens an HTTP stream per turn. Passing a connected `Link`
+     * instead carries turns over that websocket, reusing a connection you already
+     * have — everything else, including the payloads you receive, is identical.
+     */
+    transport?: "sse" | Link;
 }
 
 const DEFAULT_CONVO_API_V: APIPath = "v4";
@@ -77,7 +85,10 @@ export class Conversation<V extends APIPath = "v4"> {
     private debug: boolean;
     private chatApiV: V;
     private options?: DialogueRequestOptions
-    private events: Map<string, Map<string, Function>> = new Map();
+    private events = new Emitter<{ convoId: [string] }>();
+    private transport: ConversationTransport;
+    /** The link carrying this conversation, when it is not on SSE. */
+    readonly link?: Link;
 
     private endpoints: {
         conversation: string,
@@ -103,6 +114,22 @@ export class Conversation<V extends APIPath = "v4"> {
 
         this.apiKey = config.apiKey;
         this.debug = config.debug || false;
+
+        if (config.transport && config.transport !== "sse") {
+            this.link = config.transport;
+            this.transport = new LinkConversationTransport(config.transport, () => ({
+                model: this.options?.model,
+                personality: this.options?.personality,
+                instructions: this.options?.instructions,
+                platform: this.options?.platform,
+            }));
+        } else {
+            this.transport = new SSEConversationTransport({
+                endpoint: () => this.endpoints.conversation,
+                apiKey: this.apiKey,
+                debug: this.debug,
+            });
+        }
     }
 
     // SETTERS
@@ -227,48 +254,18 @@ export class Conversation<V extends APIPath = "v4"> {
 
     // EVENT EMITTER
 
-    private hasEmitter(event: string) {
-        return this.events.has(event);
-    }
-
-    private addEmitter(event: string) {
-        if (!this.hasEmitter(event)) this.events.set(event, new Map());
-    }
-
-    private removeEmitter(event: string) {
-        this.events.delete(event);
-    }
-
-    private addListener(event: string, cb: Function) {
-        if (!this.hasEmitter(event)) this.addEmitter(event);
-        const listeners = this.events.get(event)!;
-        const id = crypto.randomUUID();
-        listeners.set(id, cb);
-        return id;
-    }
-
-    private removeListener(event: string, id: string) {
-        const listeners = this.events.get(event);
-        if (listeners) listeners.delete(id);
-    }
-
-    private emit(event: string, ...args: any[]) {
-        const listeners = this.events.get(event);
-        if (listeners) listeners.forEach(listener => listener(...args));
-    }
-
     /** 
      * Fires when the conversation ID is set 
      * if convoId is already set when this is called, fires immediately
      * */
     onConvoId(cb: (convoId: string) => any): string {
         if (this.convoId) cb(this.convoId);
-        return this.addListener("convoId", cb);
+        return this.events.on("convoId", cb);
     }
 
     /** Removes a convoId listener */
     offConvoId(listenerId: string) {
-        this.removeListener("convoId", listenerId);
+        this.events.off("convoId", listenerId);
     }
 
     /** 
@@ -280,33 +277,7 @@ export class Conversation<V extends APIPath = "v4"> {
             cb(this.convoId);
             return;
         }
-        const id = this.addListener("convoId", (convoId: string) => {
-            cb(convoId);
-            this.offConvoId(id);
-        });
-        return id;
-    }
-
-    // SSE HANDLER
-
-    private handleSSE(url: string, cb: (chunk: RequestResponseByVersion[V]) => any, options: SSEHandlerOptions = {}) {
-        const sse = new EventSource(url);
-
-        sse.addEventListener("message", (event) => {
-            const data = JSON.parse(event.data) as RequestResponseByVersion[V];
-
-            const convoId = data.success ? data.data.convoId : undefined;
-            if (convoId && options.onConvoId) options.onConvoId(convoId);
-
-            cb(data);
-            if (data.data.quitStream) sse.close();
-        });
-
-        sse.addEventListener("error", (event) => {
-            if (this.debug) console.warn(`[Stream Error: ${url}]`, event);
-        });
-
-        return sse;
+        return this.events.once("convoId", cb);
     }
 
     // GETTERS
@@ -332,7 +303,7 @@ export class Conversation<V extends APIPath = "v4"> {
         if (!this.convoId) throw new Error("Conversation ID is not set");
 
         const url = formatURL(this.endpoints.progressStream, { chatId: this.convoId }, { apiKey: this.apiKey, debug: this.debug });
-        return this.handleSSE(url, cb);
+        return streamSSE(url, { debug: this.debug, onPayload: (payload) => cb(payload as RequestResponseByVersion[V]) });
     }
 
     /** 
@@ -365,21 +336,53 @@ export class Conversation<V extends APIPath = "v4"> {
     // LIFE CYCLE
 
     /** Sends a message into the conversation */
-    send(message: string, cb: (chunk: RequestResponseByVersion[V]) => any, options?: DialogueRequestOptions) {
-        const payload: Record<string, any> = {
+    send(message: string, cb: (chunk: RequestResponseByVersion[V]) => any, options?: DialogueRequestOptions): ConversationStream {
+        return this.transport.send({
             message,
             ...this.options, // options set for convo
-            ...options // overwrite convos for this call
-        };
-
-        if (this.convoId) payload.chatId = this.convoId;
-
-        const url = formatURL(this.endpoints.conversation, payload, { apiKey: this.apiKey, debug: this.debug });
-        return this.handleSSE(url, cb, {
-            onConvoId: (convoId) => {
+            ...options,      // overwrite convo's for this call
+            ...(this.convoId ? { chatId: this.convoId } : {}),
+        }, {
+            payload: (payload) => cb(payload as RequestResponseByVersion[V]),
+            convoId: (convoId) => {
+                if (this.convoId === convoId) return;
                 this.convoId = convoId;
-                this.emit("convoId", convoId);
-            }
+                this.events.emit("convoId", convoId);
+            },
+        });
+    }
+
+    /**
+     * Sends a message and resolves with the finished reply.
+     *
+     * For when you want the answer rather than the stream. Every event still arrives
+     * through `onEvent` if you pass one.
+     */
+    ask(message: string, options?: DialogueRequestOptions & { onEvent?: (chunk: RequestResponseByVersion[V]) => any }) {
+        return new Promise<{ text: string; convoId?: string; events: RequestResponseByVersion[V][] }>((resolve, reject) => {
+            const events: RequestResponseByVersion[V][] = [];
+            let text = "";
+
+            this.send(message, (chunk) => {
+                events.push(chunk);
+                options?.onEvent?.(chunk);
+
+                if (!chunk.success) {
+                    reject(new Error(chunk.data.message || chunk.data.error || chunk.data.code));
+                    return;
+                }
+
+                const response = chunk.data.response as { type: string; payload?: { message?: string; participantId?: string } };
+                const metadata = (chunk.data.response as { metadata?: { participantId?: string } }).metadata;
+
+                // Message chunks arrive cumulative, and Alfred's own notices are not part
+                // of the reply, so they are collected but not concatenated into it.
+                if (response.type === "message" && metadata?.participantId !== "system" && response.payload?.message) {
+                    text = response.payload.message;
+                }
+
+                if (chunk.data.quitStream) resolve({ text, convoId: this.convoId, events });
+            }, options);
         });
     }
 }

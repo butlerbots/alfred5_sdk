@@ -12,34 +12,58 @@
 		"pack": "npm run build && npm pack --pack-destination=\"G:\\tarballs\"",
 		"update": "npm run build && npm publish --access public",
 		"update:alpha": "npm run build && npm publish --access public --tag alpha",
-		"test": "jest"
+		"test": "bun test",
+		"typecheck": "tsc --noEmit"
 	},
 	"keywords": [
-		"butlerbot",
-		"alfred",
-		"sdk",
-		"chatbot",
+		"agents",
 		"ai",
-		"butler"
+		"alfred",
+		"butler",
+		"butlerbot",
+		"chatbot",
+		"sdk",
+		"tools",
+		"websocket"
 	],
 	"author": "Fragly",
 	"license": "MIT",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/isdevco/alfred5_sdk.git"
+		"url": "git+https://github.com/butlerbots/alfred5_sdk.git"
 	},
 	"bugs": {
-		"url": "https://github.com/isdevco/alfred5_sdk/issues"
+		"url": "https://github.com/butlerbots/alfred5_sdk/issues"
 	},
 	"homepage": "https://butlerbot.net",
 	"engines": {
-		"node": ">=14.0.0"
+		"node": ">=18.0.0"
 	},
 	"devDependencies": {
+		"@types/bun": "^1.1.0",
 		"@types/node": "^22.13.10",
-		"typescript": "^5.8.2"
+		"typescript": "^5.8.2",
+		"zod": "^4.0.0"
 	},
 	"dependencies": {
 		"eventsource": "^3.0.5"
+	},
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"peerDependencies": {
+		"zod": ">=3.24.0",
+		"ws": ">=8.0.0"
+	},
+	"peerDependenciesMeta": {
+		"zod": {
+			"optional": true
+		},
+		"ws": {
+			"optional": true
+		}
 	}
 }
