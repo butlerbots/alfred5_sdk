@@ -1,3 +1,5 @@
+import { describe, expect, it } from "bun:test";
+
 import { Conversation } from "../modules/conversation";
 import { ConversationEvent } from "../types/response/v5";
 import { createLinkHarness, FakeSocket, flush } from "./support/fake_link";

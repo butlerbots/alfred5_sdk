@@ -46,22 +46,26 @@ const waterLow = new Hook({
 });
 link.addHook(waterLow);
 
-await link.connect();
-console.log(`Connected as ${link.connectionId}, speaking for a ${link.scope}`);
+async function main() {
+    await link.connect();
+    console.log(`Connected as ${link.connectionId}, speaking for a ${link.scope}`);
 
-// Fires whenever it needs to; agents subscribed to this hook decide what to do.
-await waterLow.emit("low", { level: 0.2 });
+    // Fires whenever it needs to; agents subscribed to this hook decide what to do.
+    await waterLow.emit("low", { level: 0.2 });
 
-// ── A conversation over the same connection ──
-const convo = client.createConversation({ transport: link });
+    // ── A conversation over the same connection ──
+    const convo = client.createConversation({ transport: link });
 
-const answer = await convo.ask("Is there any coffee on?");
-console.log(answer.text);
+    const answer = await convo.ask("Is there any coffee on?");
+    console.log(answer.text);
 
-// The streaming form is identical to the HTTP transport, payload for payload.
-convo.send("Make me a strong one", (chunk) => {
-    if (!chunk.success) return console.error(chunk.data.message);
+    // The streaming form is identical to the HTTP transport, payload for payload.
+    convo.send("Make me a strong one", (chunk) => {
+        if (!chunk.success) return console.error(chunk.data.message);
 
-    const { type, payload } = chunk.data.response;
-    console.log(type, payload);
-});
+        const { type, payload } = chunk.data.response;
+        console.log(type, payload);
+    });
+}
+
+void main();

@@ -22,6 +22,17 @@ export type HookConfig<S extends ToolSchema | undefined> = {
     jsonSchema?: JSONSchema;
 };
 
+/**
+ * A hook of any schema, which is what a link holds. See `AnyTool` for why this
+ * exists rather than a `Hook<...>`.
+ */
+export interface AnyHook {
+    readonly id: string;
+    sourceId?: string;
+    declaration(): LinkHookDeclaration;
+    attach(link: HookEmitter): void;
+}
+
 /** What a hook needs from its link in order to emit. Implemented by `Link`. */
 export type HookEmitter = {
     /**

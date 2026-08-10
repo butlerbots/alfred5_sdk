@@ -85,18 +85,24 @@ export function createLinkHarness(options: { linkId?: string; reconnect?: boolea
     async function answerRegistrations(socket: FakeSocket): Promise<void> {
         for (let round = 0; round < 10; round++) {
             await flush();
+            let answeredAny = false;
 
-            const pending = socket.sent.filter(frame =>
-                (frame.type === "tool.register" || frame.type === "hook.register") && !answered.has(frame.id));
-            if (!pending.length) return;
+            for (const frame of socket.sent) {
+                if (answered.has(frame.id)) continue;
 
-            for (const frame of pending) {
-                answered.add(frame.id);
                 const ids = frame.type === "tool.register"
                     ? frame.payload.tools.map(tool => `link:${link.linkId}/${tool.localId}`)
-                    : [`link:${link.linkId}/${frame.payload.localId}`];
+                    : frame.type === "hook.register"
+                        ? [`link:${link.linkId}/${frame.payload.localId}`]
+                        : undefined;
+                if (!ids) continue;
+
+                answered.add(frame.id);
+                answeredAny = true;
                 socket.push("ack", { ids }, frame.id);
             }
+
+            if (!answeredAny) return;
         }
     }
 

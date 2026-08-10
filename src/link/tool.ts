@@ -53,6 +53,25 @@ export type ToolConfig<S extends ToolSchema | undefined> = {
     run: (context: ToolRunContext<S>) => unknown | Promise<unknown>;
 };
 
+/**
+ * A tool of any schema, which is what a link holds.
+ *
+ * `Tool<S>` mentions `S` in its config, so a collection of tools with different
+ * schemas has no common `Tool<...>` type. This is the part a link actually uses,
+ * and every `Tool` satisfies it whatever its schema.
+ */
+export interface AnyTool {
+    readonly id: string;
+    linkedId?: string;
+    descriptor(): LinkToolDescriptor;
+    invoke(
+        args: unknown,
+        meta: ToolCallMeta,
+        status: ToolStatusReporter,
+        signal: AbortSignal,
+    ): Promise<ToolInvocation>;
+}
+
 /** The outcome of one call, as reported back to the server. */
 export type ToolInvocation =
     | { ok: true; output: unknown }

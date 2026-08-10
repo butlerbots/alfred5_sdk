@@ -72,13 +72,23 @@ export type LinkClientPayloads = {
 
 export type LinkClientFrameType = keyof LinkClientPayloads;
 
-export type LinkClientFrame<T extends LinkClientFrameType = LinkClientFrameType> = {
-    v: number;
-    id: string;
-    type: T;
-    replyTo?: string;
-    payload: LinkClientPayloads[T];
-};
+/**
+ * A union of one member per frame type, rather than one type whose `type` and
+ * `payload` are both unions — otherwise checking `frame.type` narrows nothing and
+ * `payload` stays a union of every payload.
+ */
+export type LinkClientFrame = {
+    [T in LinkClientFrameType]: {
+        v: number;
+        id: string;
+        type: T;
+        replyTo?: string;
+        payload: LinkClientPayloads[T];
+    };
+}[LinkClientFrameType];
+
+/** One specific client frame, e.g. `LinkClientFrameOf<"tool.result">`. */
+export type LinkClientFrameOf<T extends LinkClientFrameType> = Extract<LinkClientFrame, { type: T }>;
 
 // =============================================
 // SERVER → CLIENT
@@ -108,21 +118,19 @@ export type LinkServerPayloads = {
 
 export type LinkServerFrameType = keyof LinkServerPayloads;
 
-export type LinkServerFrame<T extends LinkServerFrameType = LinkServerFrameType> = {
-    v?: number;
-    id: string;
-    type: T;
-    replyTo?: string;
-    payload: LinkServerPayloads[T];
-};
+/** A union of one member per frame type, so `frame.type` narrows `frame.payload`. */
+export type LinkServerFrame = {
+    [T in LinkServerFrameType]: {
+        v?: number;
+        id: string;
+        type: T;
+        replyTo?: string;
+        payload: LinkServerPayloads[T];
+    };
+}[LinkServerFrameType];
 
-/** Narrows a received frame to one type, for use in handlers. */
-export function isFrameOfType<T extends LinkServerFrameType>(
-    frame: LinkServerFrame,
-    type: T,
-): frame is LinkServerFrame<T> {
-    return frame.type === type;
-}
+/** One specific server frame, e.g. `LinkServerFrameOf<"conversation.done">`. */
+export type LinkServerFrameOf<T extends LinkServerFrameType> = Extract<LinkServerFrame, { type: T }>;
 
 /** An error reported by the server, carrying the code it used. */
 export class LinkError extends Error {

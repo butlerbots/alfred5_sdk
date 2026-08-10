@@ -1,0 +1,12 @@
+{
+  /* Typechecks everything, including the tests and examples that are kept out of
+     the published build. Run by `npm run typecheck`. */
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": ".",
+    "types": ["node", "bun"]
+  },
+  "include": ["src/**/*", "examples/**/*"],
+  "exclude": ["node_modules", "dist"]
+}

@@ -13,7 +13,7 @@
 		"update": "npm run build && npm publish --access public",
 		"update:alpha": "npm run build && npm publish --access public --tag alpha",
 		"test": "bun test",
-		"typecheck": "tsc --noEmit"
+		"typecheck": "tsc --noEmit -p tsconfig.check.json"
 	},
 	"keywords": [
 		"agents",

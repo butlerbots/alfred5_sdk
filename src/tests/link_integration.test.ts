@@ -1,3 +1,5 @@
+import { describe, expect, it } from "bun:test";
+
 import type { ServerWebSocket } from "bun";
 
 import { Link } from "../link/link";
@@ -108,6 +110,7 @@ describe("A link over a real socket", () => {
         // server comes back, and the link has to re-declare everything unprompted.
         const first = linkServer();
         const port = first.server.port;
+        if (port === undefined) throw new Error("the test server has no port");
 
         const link = new Link({
             apiKey: "ap-abc_123",
