@@ -61,8 +61,9 @@ link.addTool(new Tool({
   description: "Brew a coffee for the user",
   schema: z.object({ cups: z.number().int().min(1).max(4) }),
   run: async ({ args, status }) => {
-    status.update("Grinding beans");
-    return `Brewed ${args.cups} cup(s).`;   // args is typed from the schema
+    status.update("Grinding beans");           // progress, shown while it runs
+    status.complete("Brewed the coffee");      // the label the conversation keeps
+    return `Brewed ${args.cups} cup(s).`;      // args is typed from the schema
   },
 }));
 

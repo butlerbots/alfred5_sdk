@@ -8,6 +8,7 @@ import { LinkError } from "../link/protocol";
 import { toJSONSchema, validateArgs } from "../link/schema";
 import { buildHandshake } from "../link/socket";
 import { Tool } from "../link/tool";
+import type { ToolStatusReporter } from "../link/tool";
 
 // =============================================
 // SCHEMAS
@@ -254,6 +255,6 @@ function meta() {
     return { userId: "us-aaa", chatId: "convo-1", runId: "run-1" };
 }
 
-function noopStatus() {
-    return { update: () => undefined, fail: () => undefined };
+function noopStatus(): ToolStatusReporter {
+    return { update: () => undefined, complete: () => undefined, fail: () => undefined };
 }

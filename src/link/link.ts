@@ -514,9 +514,20 @@ export class Link {
         const controller = new AbortController();
         this.calls.set(callId, controller);
 
+        // Only a final status is kept in the conversation, so every call has to end on
+        // one. The tool may send its own, with a better label than we could invent; if
+        // it does not, we send one for it below rather than leave the call unfinished.
+        let reported: "running" | "completed" | "failed" = "running";
+        const report = (label: string, state: "running" | "completed" | "failed") => {
+            if (reported !== "running") return;
+            reported = state;
+            this.send("tool.status", { label, state }, frame.id);
+        };
+
         const status = {
-            update: (label: string) => this.send("tool.status", { label, state: "running" }, frame.id),
-            fail: (label: string) => this.send("tool.status", { label, state: "failed" }, frame.id),
+            update: (label: string) => report(label, "running"),
+            complete: (label: string) => report(label, "completed"),
+            fail: (label: string) => report(label, "failed"),
         };
 
         void tool.invoke(args, meta, status, controller.signal).then(result => {
@@ -525,6 +536,15 @@ export class Link {
             // The socket may have gone while the tool ran; the server has already
             // given up on the call, so there is nothing to report to.
             if (!this.socket) return;
+
+            if (!result.ok && reported === "completed") {
+                // The tool said it succeeded and then failed anyway. The outcome is the
+                // part worth keeping, so let the failure replace what it claimed.
+                reported = "running";
+            }
+
+            if (result.ok) report(`Finished ${tool.id}.`, "completed");
+            else report(result.error, "failed");
 
             this.send("tool.result", result.ok
                 ? { ok: true, output: result.output }

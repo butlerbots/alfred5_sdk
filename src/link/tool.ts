@@ -1,10 +1,20 @@
 import { LinkToolDescriptor } from "./protocol";
 import { InferSchemaOutput, JSONSchema, ToolSchema, toJSONSchema, validateArgs } from "./schema";
 
-/** Reports progress while a tool runs. Shown live in Alfred's tool status feed. */
+/**
+ * Reports progress while a tool runs. Shown live in Alfred's tool status feed.
+ *
+ * `update` is progress; `complete` and `fail` are final. Only a final status is kept
+ * in the conversation once the turn ends — a status left at `update` is shown live
+ * and then forgotten — so a tool that wants to leave a trace should finish with
+ * `complete`. If it does not, the link sends a final status for it when `run`
+ * returns, so the call is recorded either way.
+ */
 export type ToolStatusReporter = {
-    /** Replaces the current status label. */
+    /** Replaces the current status label. The call is still running. */
     update(label: string): void;
+    /** Marks the tool as finished, with the label the conversation keeps. */
+    complete(label: string): void;
     /** Marks the tool as failed in the UI. The thrown error still decides the result. */
     fail(label: string): void;
 };
