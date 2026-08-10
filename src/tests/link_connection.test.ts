@@ -132,6 +132,92 @@ describe("Link tool calls", () => {
         expect(socket.ofType("tool.result")[0].payload).toMatchObject({ ok: false, error: expect.stringContaining("no tool") });
     });
 
+    it("finishes a call the tool reported nothing about", async () => {
+        // Only a final status is kept in the conversation, so a tool that never reports
+        // one would run and leave no trace of having run.
+        const { link, connect } = setup();
+        link.addTool(new Tool({ id: "brew", description: "Brew coffee", run: () => "done" }));
+
+        const socket = await connect();
+        socket.push("tool.call", { callId: "call-1", localId: "brew", args: {}, meta: { userId: "us-aaa", runId: "run-1" }, timeoutMs: 1000 });
+        await flush();
+
+        expect(socket.ofType("tool.status").map(frame => frame.payload.state)).toEqual(["completed"]);
+    });
+
+    it("keeps the tool's own closing label rather than inventing one", async () => {
+        const { link, connect } = setup();
+        link.addTool(new Tool({
+            id: "brew",
+            description: "Brew coffee",
+            run: ({ status }) => {
+                status.update("Grinding");
+                status.complete("Poured two cups");
+                return "done";
+            },
+        }));
+
+        const socket = await connect();
+        socket.push("tool.call", { callId: "call-1", localId: "brew", args: {}, meta: { userId: "us-aaa", runId: "run-1" }, timeoutMs: 1000 });
+        await flush();
+
+        expect(socket.ofType("tool.status").map(frame => frame.payload)).toEqual([
+            { label: "Grinding", state: "running" },
+            { label: "Poured two cups", state: "completed" },
+        ]);
+    });
+
+    it("ignores anything reported after the tool has closed the call", async () => {
+        const { link, connect } = setup();
+        link.addTool(new Tool({
+            id: "brew",
+            description: "Brew coffee",
+            run: ({ status }) => {
+                status.complete("Poured");
+                status.update("Still going somehow");
+                return "done";
+            },
+        }));
+
+        const socket = await connect();
+        socket.push("tool.call", { callId: "call-1", localId: "brew", args: {}, meta: { userId: "us-aaa", runId: "run-1" }, timeoutMs: 1000 });
+        await flush();
+
+        expect(socket.ofType("tool.status").map(frame => frame.payload)).toEqual([{ label: "Poured", state: "completed" }]);
+    });
+
+    it("marks a thrown call as failed, so the failure is kept too", async () => {
+        const { link, connect } = setup();
+        link.addTool(new Tool({ id: "brew", description: "Brew coffee", run: () => { throw new Error("out of beans"); } }));
+
+        const socket = await connect();
+        socket.push("tool.call", { callId: "call-1", localId: "brew", args: {}, meta: { userId: "us-aaa", runId: "run-1" }, timeoutMs: 1000 });
+        await flush();
+
+        expect(socket.ofType("tool.status")[0].payload).toEqual({ label: "out of beans", state: "failed" });
+    });
+
+    it("lets the outcome overrule a tool that claimed success and then threw", async () => {
+        const { link, connect } = setup();
+        link.addTool(new Tool({
+            id: "brew",
+            description: "Brew coffee",
+            run: ({ status }) => {
+                status.complete("Poured");
+                throw new Error("spilled it");
+            },
+        }));
+
+        const socket = await connect();
+        socket.push("tool.call", { callId: "call-1", localId: "brew", args: {}, meta: { userId: "us-aaa", runId: "run-1" }, timeoutMs: 1000 });
+        await flush();
+
+        expect(socket.ofType("tool.status").map(frame => frame.payload)).toEqual([
+            { label: "Poured", state: "completed" },
+            { label: "spilled it", state: "failed" },
+        ]);
+    });
+
     it("aborts a running call when the server cancels it", async () => {
         const { link, connect } = setup();
         let aborted = false;

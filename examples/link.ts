@@ -33,6 +33,8 @@ link.addTool(new Tool({
         status.update(`Grinding beans for ${args.cups}`);
         await new Promise(resolve => setTimeout(resolve, 1000));
 
+        // The label a `complete` leaves behind is the one the conversation keeps.
+        status.complete(`Brewed ${args.cups} ${args.strength} cup(s)`);
         return `Brewed ${args.cups} ${args.strength} cup(s).`;
     },
 }));
