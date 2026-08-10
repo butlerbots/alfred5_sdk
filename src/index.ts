@@ -1,4 +1,5 @@
 import { CONFIG, APIPath } from "./config";
+import { Link, LinkOptions } from "./link";
 import { Conversation, ConversationOptions } from "./modules/conversation";
 import { getUsagePolicyData, UsagePolicyDataOptions } from "./modules/usage";
 
@@ -44,6 +45,14 @@ export class ButlerBotClient {
         return new Conversation<V>({ debug: this.debug, apiKey: this.apiKey, serverUrl: this.serverUrl, ...config } as ConversationOptions<V>);
     }
 
+    /**
+     * Creates a Link: a live connection that can register tools and hooks, and carry
+     * conversations. Inherits the client's API key and server URL.
+     */
+    createLink(config: OptionalApiKey<LinkOptions>): Link {
+        return new Link({ debug: this.debug, apiKey: this.apiKey, serverUrl: this.serverUrl, ...config } as LinkOptions);
+    }
+
     /** Get current usage policy data */
     getUsagePolicyData(config: OptionalApiKey<UsagePolicyDataOptions>) {
         return getUsagePolicyData({ serverURL: this.serverUrl, apiKey: this.apiKey, debug: this.debug, ...config });
@@ -52,5 +61,14 @@ export class ButlerBotClient {
 
 // Expose types from subsequent modules
 export * from "./types/type_registry";
+export * from "./link";
 export { Conversation, ConversationOptions };
 export type { APIPath };
+export type {
+    ConversationStream,
+    ConversationTransport,
+    TransportTurnRequest,
+    TransportHandlers,
+} from "./modules/transport";
+export { LinkConversationTransport } from "./modules/transport_link";
+export { SSEConversationTransport } from "./modules/transport_sse";
