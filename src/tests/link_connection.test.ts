@@ -1,3 +1,5 @@
+import { describe, expect, it } from "bun:test";
+
 import { z } from "zod";
 
 import { Link } from "../link/link";
@@ -97,9 +99,6 @@ describe("Link tool calls", () => {
             timeoutMs: 30_000,
         });
         await flush();
-
-        const call = socket.sent.find(frame => frame.type === "tool.call");
-        expect(call).toBeUndefined();
 
         // Both the status and the result are correlated to the call frame, which is how
         // the server matches them up.

@@ -1,6 +1,9 @@
+import { describe, expect, it } from "bun:test";
+
 import { z } from "zod";
 
 import { Hook } from "../link/hook";
+import { Link } from "../link/link";
 import { LinkError } from "../link/protocol";
 import { toJSONSchema, validateArgs } from "../link/schema";
 import { buildHandshake } from "../link/socket";
@@ -190,6 +193,42 @@ describe("Hooks", () => {
 
     it("says so when it is not on a link yet", async () => {
         await expect(doorbell().emit("rang")).rejects.toThrow(/not on a link yet/);
+    });
+});
+
+// =============================================
+// WHAT A LINK ACCEPTS
+// =============================================
+
+describe("Adding things to a link", () => {
+    /**
+     * A compile-time guard: tools and hooks with different schemas have no common
+     * `Tool<S>` type, so a link has to accept them by what it uses, not by schema.
+     * This once failed for every caller who passed a real schema.
+     */
+    it("takes tools and hooks whatever their schema", () => {
+        const link = new Link({ apiKey: "ap-abc_123", linkId: "coffee", heartbeatMs: 0, reconnect: false });
+
+        link.addTool(new Tool({
+            id: "brew",
+            description: "Brew a coffee",
+            schema: z.object({ cups: z.number(), strength: z.enum(["mild", "strong"]).default("mild") }),
+            run: ({ args }) => `${args.cups} ${args.strength}`,
+        }));
+        link.addTool(new Tool({ id: "ping", description: "Ping", run: () => "pong" }));
+        link.addTool(new Tool({ id: "raw", description: "Raw schema", jsonSchema: { type: "object" }, run: () => "ok" }));
+
+        link.addHook(new Hook({ id: "doorbell", name: "Doorbell", description: "Rang", events: [{ name: "rang" }] }));
+        link.addHook(new Hook({
+            id: "tank",
+            name: "Tank",
+            description: "Level changed",
+            events: [{ name: "low" }],
+            schema: z.object({ level: z.number() }),
+        }));
+
+        expect(link.getTool("brew")?.id).toBe("brew");
+        expect(link.getHook("tank")?.id).toBe("tank");
     });
 });
 

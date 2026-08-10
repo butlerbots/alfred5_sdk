@@ -1,5 +1,5 @@
 import type { Link } from "../link/link";
-import { LinkError, LinkServerFrame } from "../link/protocol";
+import { LinkError, LinkServerFrame, LinkServerFrameOf } from "../link/protocol";
 import { ConversationEvent } from "../types/response/v5";
 import {
     completedPayload,
@@ -99,7 +99,7 @@ export class LinkConversationTransport implements ConversationTransport {
             isDone: (frame) => frame.type === "conversation.done",
             onFrame: (frame) => {
                 if (frame.type === "conversation.event") {
-                    const payload = (frame as LinkServerFrame<"conversation.event">).payload;
+                    const payload = frame.payload;
                     learnChatId(payload.chatId);
 
                     const event = payload.event as ConversationEvent;
@@ -118,14 +118,14 @@ export class LinkConversationTransport implements ConversationTransport {
                 }
 
                 if (frame.type === "conversation.notice") {
-                    const payload = (frame as LinkServerFrame<"conversation.notice">).payload;
+                    const payload = frame.payload;
                     learnChatId(payload.chatId);
                     handlers.payload(noticePayload(payload.message, payload.chatId ?? chatId));
                 }
             },
         });
 
-        const payload = (done as LinkServerFrame<"conversation.done">).payload;
+        const payload = (done as LinkServerFrameOf<"conversation.done">).payload;
         learnChatId(payload.chatId);
 
         if (payload.ok) {
@@ -171,7 +171,7 @@ export class LinkConversationTransport implements ConversationTransport {
             isDone: (frame) => frame.type === "conversation.open",
         });
 
-        const payload = (opened as LinkServerFrame<"conversation.open">).payload;
+        const payload = (opened as LinkServerFrameOf<"conversation.open">).payload;
         this.sessionId = payload.sessionId;
         this.sessionChatId = payload.chatId ?? chatId;
 

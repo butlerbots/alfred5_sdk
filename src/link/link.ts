@@ -1,6 +1,6 @@
 import { CONFIG } from "../config";
 import { Emitter } from "../util/emitter";
-import { Hook } from "./hook";
+import { AnyHook } from "./hook";
 import {
     LINK_PROTOCOL_VERSION,
     LinkClientFrameType,
@@ -8,9 +8,10 @@ import {
     LinkError,
     LinkScopeKind,
     LinkServerFrame,
+    LinkServerFrameOf,
 } from "./protocol";
 import { buildHandshake, defaultSocketFactory, SocketConnection, SocketFactory } from "./socket";
-import { Tool } from "./tool";
+import { AnyTool } from "./tool";
 
 export type LinkState = "idle" | "connecting" | "open" | "closed";
 
@@ -97,8 +98,8 @@ export class Link {
     };
 
     private readonly emitter = new Emitter<LinkEvents>();
-    private readonly tools = new Map<string, Tool<never>>();
-    private readonly hooks = new Map<string, Hook<never>>();
+    private readonly tools = new Map<string, AnyTool>();
+    private readonly hooks = new Map<string, AnyHook>();
     private readonly pending = new Map<string, Pending>();
     private readonly calls = new Map<string, AbortController>();
 
@@ -130,25 +131,25 @@ export class Link {
     // =============================================
 
     /** Adds a tool Alfred can call. Registered on connect, or immediately if already open. */
-    addTool<S extends Tool<never>>(tool: S): this {
-        this.tools.set(tool.id, tool as unknown as Tool<never>);
-        if (this.currentState === "open") void this.registerTools([tool as unknown as Tool<never>]);
+    addTool(tool: AnyTool): this {
+        this.tools.set(tool.id, tool);
+        if (this.currentState === "open") void this.registerTools([tool]);
         return this;
     }
 
     /** Adds a hook that can wake the user's background agents. */
-    addHook<S extends Hook<never>>(hook: S): this {
-        this.hooks.set(hook.id, hook as unknown as Hook<never>);
+    addHook(hook: AnyHook): this {
+        this.hooks.set(hook.id, hook);
         hook.attach(this);
-        if (this.currentState === "open") void this.registerHook(hook as unknown as Hook<never>);
+        if (this.currentState === "open") void this.registerHook(hook);
         return this;
     }
 
-    getTool(id: string): Tool<never> | undefined {
+    getTool(id: string): AnyTool | undefined {
         return this.tools.get(id);
     }
 
-    getHook(id: string): Hook<never> | undefined {
+    getHook(id: string): AnyHook | undefined {
         return this.hooks.get(id);
     }
 
@@ -341,7 +342,7 @@ export class Link {
         for (const hook of this.hooks.values()) await this.registerHook(hook);
     }
 
-    private async registerTools(tools: Tool<never>[]): Promise<void> {
+    private async registerTools(tools: AnyTool[]): Promise<void> {
         if (!tools.length) return;
 
         const frame = await this.exchange("tool.register", { tools: tools.map(tool => tool.descriptor()) }, { awaitReady: false });
@@ -353,7 +354,7 @@ export class Link {
         this.debug(`registered ${tools.length} tool(s)`);
     }
 
-    private async registerHook(hook: Hook<never>): Promise<void> {
+    private async registerHook(hook: AnyHook): Promise<void> {
         const frame = await this.exchange("hook.register", hook.declaration(), { awaitReady: false });
         hook.sourceId = (frame.payload as { ids?: string[] }).ids?.[0];
         this.debug(`registered hook ${hook.id}`);
@@ -460,8 +461,8 @@ export class Link {
         const waiting = frame.replyTo ? this.pending.get(frame.replyTo) : undefined;
         if (waiting) {
             if (frame.type === "error") {
-                const payload = frame.payload as { code: string; error: string; fatal?: boolean };
-                waiting.reject(new LinkError(payload.code, payload.error, payload.fatal));
+                const { code, error, fatal } = frame.payload;
+                waiting.reject(new LinkError(code, error, fatal));
                 return;
             }
             if (waiting.isDone(frame)) waiting.resolve(frame);
@@ -471,26 +472,26 @@ export class Link {
 
         switch (frame.type) {
             case "tool.call":
-                this.handleToolCall(frame as LinkServerFrame<"tool.call">);
+                this.handleToolCall(frame);
                 return;
             case "tool.cancel": {
-                const { callId, reason } = (frame as LinkServerFrame<"tool.cancel">).payload;
+                const { callId, reason } = frame.payload;
                 this.calls.get(callId)?.abort();
                 this.calls.delete(callId);
                 this.debug(`call ${callId} cancelled: ${reason}`);
                 return;
             }
             case "log":
-                this.emitter.emit("log", (frame as LinkServerFrame<"log">).payload.log);
+                this.emitter.emit("log", frame.payload.log);
                 return;
             case "goodbye": {
-                const payload = (frame as LinkServerFrame<"goodbye">).payload;
+                const payload = frame.payload;
                 this.reconnectAfterMs = payload.reconnectAfterMs;
                 this.emitter.emit("goodbye", payload);
                 return;
             }
             case "error": {
-                const payload = (frame as LinkServerFrame<"error">).payload;
+                const payload = frame.payload;
                 const error = new LinkError(payload.code, payload.error, payload.fatal);
                 if (payload.fatal) this.closedByUs = true;
                 this.emitter.emit("error", error);
@@ -501,7 +502,7 @@ export class Link {
         }
     }
 
-    private handleToolCall(frame: LinkServerFrame<"tool.call">): void {
+    private handleToolCall(frame: LinkServerFrameOf<"tool.call">): void {
         const { callId, localId, args, meta } = frame.payload;
         const tool = this.tools.get(localId);
 
