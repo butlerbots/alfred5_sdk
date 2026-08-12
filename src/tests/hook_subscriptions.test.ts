@@ -134,10 +134,40 @@ describe("reporting events", () => {
         expect(payload).not.toHaveProperty("userId");
     });
 
+    it("reports to ids the caller picked, without applying the prefilter", async () => {
+        // The escape hatch: "mentions my user" is not field equality, so the caller decided. A prefilter
+        // that would have excluded this event must not second-guess that decision.
+        const h = await connected([
+            subscription("rx-1", { prefilter: { camera: "front" } }),
+            subscription("rx-2"),
+        ]);
+
+        const reported = await h.hook.reportTo(["rx-1"], "rang", { camera: "back" });
+
+        expect(reported).toEqual(["rx-1"]);
+        expect(h.socket.ofType("hook.event")[0].payload.subscriptionIds).toEqual(["rx-1"]);
+    });
+
+    it("drops an id it was never given rather than sending one the server would reject", async () => {
+        // A subscription vanishing between the caller's decision and this call is a race, not a mistake.
+        const h = await connected([subscription("rx-1")]);
+
+        expect(await h.hook.reportTo(["rx-1", "rx-gone"], "rang")).toEqual(["rx-1"]);
+        expect(await h.hook.reportTo(["rx-gone"], "rang")).toEqual([]);
+        expect(h.socket.ofType("hook.event")).toHaveLength(1);
+    });
+
+    it("does not report to ids belonging to another source", async () => {
+        const h = await connected([subscription("rx-other", { sourceId: "link:coffee/other" })]);
+
+        expect(await h.hook.reportTo(["rx-other"], "rang")).toEqual([]);
+    });
+
     it("refuses an undeclared event where the typo was made", async () => {
         const h = await connected([subscription("rx-1")]);
 
         await expect(h.hook.report("ringed")).rejects.toThrow(/does not declare an event named "ringed"/);
+        await expect(h.hook.reportTo(["rx-1"], "ringed")).rejects.toThrow(/does not declare an event named "ringed"/);
     });
 
     it("still supports emit, so deployed clients keep working", async () => {

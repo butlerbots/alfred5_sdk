@@ -45,7 +45,12 @@ export type HookEmitter = {
      * Reports an event against the subscriptions it matched, sending nothing when it
      * matched none. Returns the ids that were reported.
      */
-    reportHookEvent(hookId: string, event: string, payload?: Record<string, unknown>): Promise<string[]>;
+    reportHookEvent(
+        hookId: string,
+        event: string,
+        payload?: Record<string, unknown>,
+        subscriptionIds?: string[],
+    ): Promise<string[]>;
     /** The subscriptions the server has pushed for this hook's source. */
     hookSubscriptions(hookId: string): LinkSubscription[];
 };
@@ -156,5 +161,32 @@ export class Hook<S extends ToolSchema | undefined = undefined> {
      */
     get subscriptions(): LinkSubscription[] {
         return this.link?.hookSubscriptions(this.id) ?? [];
+    }
+
+    /**
+     * Reports an event to subscriptions you picked yourself.
+     *
+     * The escape hatch from the prefilter, for conditions that are not field equality: "mentions my
+     * user", "within 50 metres", "the third time today". Read `subscriptions`, decide with real code —
+     * `identities` is there for the "is this about my user" half — and pass the ids you chose.
+     *
+     * The prefilter is deliberately not applied to these: you already decided. What is checked is that
+     * each id is one this link currently holds for this hook, so a stale id is dropped rather than sent
+     * and rejected. Unknown ids are dropped quietly, because a subscription disappearing between your
+     * decision and this call is a race, not a mistake.
+     */
+    async reportTo(subscriptionIds: string[], event: string, payload?: Record<string, unknown>): Promise<string[]> {
+        if (!this.link) {
+            throw new Error(`Hook "${this.id}" is not on a link yet — call link.addHook(hook) first.`);
+        }
+
+        if (!this.config.events.some(declared => declared.name === event)) {
+            const declared = this.config.events.map(entry => entry.name).join(", ") || "none";
+            throw new Error(`Hook "${this.id}" does not declare an event named "${event}". Declared: ${declared}.`);
+        }
+
+        if (subscriptionIds.length === 0) return [];
+
+        return this.link.reportHookEvent(this.id, event, payload, subscriptionIds);
     }
 }
