@@ -156,6 +156,27 @@ Subscriptions are never persisted by the SDK. They arrive on connect, follow del
 connected, and are dropped on disconnect — so there is nothing to reconcile, and a restart is
 correct by construction.
 
+### Tools can belong to an agent instead of a chat
+
+By default a tool shows up where a user is talking to Alfred. If your client mirrors a whole
+platform, say so instead:
+
+```ts
+new Tool({
+    id: "discord_member_kick",
+    description: "Kick a member from a server.",
+    platforms: ["platform.agent.discord"],
+    run: async ({ args, meta }) => kick(meta.identities?.discord, args),
+});
+```
+
+Seventy tools in front of somebody asking about their groceries is not a feature. Behind Alfred's
+Discord agent they are one entry that already knows when Discord is relevant — and the agent keeps
+whatever tier and permission gating it carries, which tools bolted onto the chat would quietly skip.
+
+An unknown platform is rejected when you register, not ignored: a tool reachable from nowhere looks
+exactly like a tool that is broken.
+
 ### Tools belong to the user, not to a conversation
 
 Once a tool is registered, Alfred can call it anywhere that user talks to it — the web

@@ -265,3 +265,24 @@ function meta() {
 function noopStatus(): ToolStatusReporter {
     return { update: () => undefined, complete: () => undefined, fail: () => undefined };
 }
+
+describe("where a tool belongs", () => {
+    it("says nothing by default, so the server picks the user's chat", () => {
+        const tool = new Tool({ id: "brew", description: "Brew", run: () => "ok" });
+
+        expect(tool.descriptor().platforms).toBeUndefined();
+    });
+
+    it("passes declared platforms through untouched", () => {
+        // Not validated here: the server owns the list of platforms that exist, and a client shipped
+        // six months ago should not be the thing deciding what is valid today.
+        const tool = new Tool({
+            id: "kick",
+            description: "Kick",
+            platforms: ["platform.agent.discord"],
+            run: () => "ok",
+        });
+
+        expect(tool.descriptor().platforms).toEqual(["platform.agent.discord"]);
+    });
+});
