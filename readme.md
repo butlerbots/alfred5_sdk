@@ -98,6 +98,50 @@ over and the older one's registrations are released. That is deliberate, so a ha
 socket cannot lock out a fresh one during a deploy, but it does mean two genuinely
 different clients must not share an id.
 
+### Hooks: emit, or report what matched
+
+`emit` hands an event to the server and lets it work out who cares. That is fine for a source
+that fires rarely — a water tank, a build finishing — and it is what already-deployed clients do.
+
+For a busy source, prefer `report`. The server pushes down the list of things it wants watched,
+your client matches locally, and only the subscriptions that matched are sent:
+
+```ts
+link.on("subscriptions", (subscriptions) => {
+  // Called on connect and whenever the set changes. Set up whatever you need to watch.
+  for (const subscription of subscriptions) {
+    console.log(subscription.name, subscription.prefilter, subscription.identities);
+  }
+});
+
+// Report an event. Sends nothing at all if no subscription matched.
+const matched = await doorbell.report("rang", { camera: "front" });
+```
+
+Why this is the better path:
+
+- **Nothing irrelevant is sent.** A channel with 10,000 messages a day that nobody subscribed to
+  costs one local comparison per message and zero frames.
+- **Your platform's semantics stay in your code.** "Messages in #support from non-bots" is
+  knowledge Alfred's server never has to learn.
+- **Fan-out is one frame.** Five people watching one channel is one `hook.event` with five ids.
+- **You never name a user.** A subscription id is a handle the server issued and already bound to
+  an owner, so ownership is not something your client can get wrong or forge.
+
+`subscription.prefilter` is applied for you by `report` — a dot-path map of conditions, all ANDed,
+scalars or arrays (`{ "author.bot": false, "channel.id": ["1", "2"] }`). It is a volume gate, not a
+query language: anything it cannot express, match yourself with `hook.subscriptions` and pass the
+ids you chose. Ignoring prefilters entirely is still *correct*, just louder — the server evaluates
+them again before spending anything.
+
+`subscription.identities` is how you answer "is this event about *my* user": a plain string map in
+namespaces you understand, e.g. `{ discord: "1897..." }`, present only for owners who have linked
+that account. Nothing else about the user is exposed.
+
+Subscriptions are never persisted by the SDK. They arrive on connect, follow deltas while
+connected, and are dropped on disconnect — so there is nothing to reconcile, and a restart is
+correct by construction.
+
 ### Tools belong to the user, not to a conversation
 
 Once a tool is registered, Alfred can call it anywhere that user talks to it — the web

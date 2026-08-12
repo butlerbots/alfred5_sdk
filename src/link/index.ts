@@ -17,6 +17,10 @@ export type {
     LinkHookDeclaration,
     LinkHookEventDeclaration,
 } from "./protocol";
+export { SubscriptionStore } from "./subscriptions";
+export type { LinkSubscription, SubscriptionSnapshot, SubscriptionDelta } from "./subscriptions";
+export { matchesPrefilter, readPath } from "./prefilter";
+export type { Prefilter, PrefilterCondition, PrefilterScalar } from "./prefilter";
 export type { JSONSchema, StandardSchemaV1, ToolSchema, InferSchemaOutput } from "./schema";
 export { buildHandshake, defaultSocketFactory } from "./socket";
 export type { SocketFactory, SocketConnection, SocketHandlers } from "./socket";
