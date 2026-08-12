@@ -27,6 +27,7 @@ export type LinkToolDescriptor = {
         longDescription: string;
     };
     defaultEnabled?: boolean;
+    platforms?: string[];
     timeoutMs?: number;
 };
 

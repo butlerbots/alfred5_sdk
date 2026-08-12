@@ -68,6 +68,19 @@ export type ToolConfig<S extends ToolSchema | undefined> = {
     };
     /** Whether the tool is on before the user has touched it. */
     defaultEnabled?: boolean;
+    /**
+     * Where in Alfred the tool is reachable, as platform ids. Defaults to the user's chat.
+     *
+     * Say this when your client mirrors a whole platform. A Discord bot offering seventy tools does
+     * not want seventy entries in front of somebody having a conversation about their groceries — it
+     * wants them behind Alfred's Discord agent, which is one entry and already knows how to decide
+     * when Discord is relevant.
+     *
+     * Known values are Alfred's platform ids, e.g. `"platform.chat.user"` (the default) and
+     * `"platform.agent.discord"`. An unknown one is rejected at registration rather than ignored,
+     * because a tool reachable from nowhere is indistinguishable from a tool that is broken.
+     */
+    platforms?: string[];
     /** How long the server waits for a result before giving up. */
     timeoutMs?: number;
     /** Runs the tool. Return anything JSON-serialisable, or throw to fail the call. */
@@ -130,6 +143,7 @@ export class Tool<S extends ToolSchema | undefined = undefined> {
             inputSchema,
             ...(this.config.display ? { display: this.config.display } : {}),
             ...(this.config.defaultEnabled !== undefined ? { defaultEnabled: this.config.defaultEnabled } : {}),
+            ...(this.config.platforms ? { platforms: this.config.platforms } : {}),
             ...(this.config.timeoutMs !== undefined ? { timeoutMs: this.config.timeoutMs } : {}),
         };
     }
