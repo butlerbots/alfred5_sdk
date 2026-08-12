@@ -397,11 +397,28 @@ export class Link {
      * The epoch travels with the frame so the server can tell a stale view from a bad one — an id
      * that was valid a moment ago is a race, not a bug worth complaining about.
      */
-    async reportHookEvent(hookId: string, event: string, payload?: Record<string, unknown>): Promise<string[]> {
+    async reportHookEvent(
+        hookId: string,
+        event: string,
+        payload?: Record<string, unknown>,
+        chosenIds?: string[],
+    ): Promise<string[]> {
         await this.ready();
 
         const sourceId = this.hooks.get(hookId)?.sourceId ?? hookId;
-        const subscriptionIds = this.subscriptionStore.match({ sourceId, event, payload });
+
+        // Explicit ids are still checked against what this link actually holds. Not out of distrust of
+        // the caller — the server checks again anyway — but because an id it was never given can only
+        // be a bug or a race with a removal, and both are better as a dropped report than as a frame
+        // the server rejects. Dropped rather than thrown: a subscription vanishing mid-event is normal.
+        const subscriptionIds = chosenIds
+            ? chosenIds.filter(id => this.subscriptionStore.get(id)?.sourceId === sourceId)
+            : this.subscriptionStore.match({ sourceId, event, payload });
+
+        if (chosenIds && subscriptionIds.length !== chosenIds.length) {
+            this.debug(`dropped ${chosenIds.length - subscriptionIds.length} unknown subscription id(s) on ${event}`);
+        }
+
         if (subscriptionIds.length === 0) return [];
 
         this.send("hook.event", {

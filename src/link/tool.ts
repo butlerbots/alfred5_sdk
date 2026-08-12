@@ -26,6 +26,17 @@ export type ToolCallMeta = {
     chatId?: string;
     /** Unique per call, useful for logs. */
     runId: string;
+    /**
+     * The user's linked accounts, in namespaces you understand: `{ discord: "1897..." }`.
+     *
+     * Present only for global-scope links — a platform client acting *as* the user, which is the case
+     * that needs it: to kick somebody as them you need their Discord id, and resolving that from an
+     * Alfred user id is the server's job. A user-scoped link is already the user's own process and is
+     * told nothing extra.
+     *
+     * Absent when the user has linked nothing. Refuse the call rather than guessing.
+     */
+    identities?: Record<string, string>;
 };
 
 export type ToolRunContext<S extends ToolSchema | undefined> = {
