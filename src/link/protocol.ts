@@ -45,6 +45,9 @@ export type LinkHookDeclaration = {
     events: LinkHookEventDeclaration[];
 };
 
+export type { LinkSubscription } from "./subscriptions";
+import type { LinkSubscription } from "./subscriptions";
+
 export type LinkClientPayloads = {
     "hello": { linkId: string; client?: string; protocolVersion?: number };
     "ping": { message?: string };
@@ -53,6 +56,22 @@ export type LinkClientPayloads = {
     "tool.status": { label: string; state?: "running" | "completed" | "failed" };
     "hook.register": LinkHookDeclaration;
     "hook.emit": { sourceId: string; event: string; payload?: Record<string, unknown>; ownerId?: string };
+    /**
+     * An event reported against the subscriptions it matched.
+     *
+     * The inverted path, and the one to prefer: the server pushed a list of things to watch, this
+     * client matched, and the ids say which subscriptions matched. Several ids in one frame is
+     * fan-out — five reflexes watching one channel is one frame. No user is ever named.
+     */
+    "hook.event": {
+        sourceId: string;
+        subscriptionIds: string[];
+        event: string;
+        payload?: Record<string, unknown>;
+        epoch?: number;
+    };
+    /** Asks for a fresh snapshot after noticing an epoch gap. */
+    "hook.subscriptions.resync": { have?: number };
     "conversation.start": {
         chatId?: string;
         model?: string;
@@ -114,6 +133,15 @@ export type LinkServerPayloads = {
     "conversation.notice": { chatId?: string; message: string };
     "conversation.done": { chatId?: string; ok: boolean; code?: string; error?: string; message?: string };
     "goodbye": { reason: string; reconnectAfterMs: number };
+    /**
+     * The full set this connection should watch, for the sources it has registered.
+     *
+     * `chunk` / `of` are 1-based and present only when the set was split; every chunk of one snapshot
+     * carries the same `epoch`.
+     */
+    "hook.subscriptions": { epoch: number; chunk?: number; of?: number; subscriptions: LinkSubscription[] };
+    /** An incremental change. An epoch more than one ahead means a delta was missed. */
+    "hook.subscriptions.delta": { epoch: number; added?: LinkSubscription[]; removed?: string[]; updated?: LinkSubscription[] };
 };
 
 export type LinkServerFrameType = keyof LinkServerPayloads;

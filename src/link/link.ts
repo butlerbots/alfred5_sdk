@@ -12,6 +12,7 @@ import {
 } from "./protocol";
 import { buildHandshake, defaultSocketFactory, SocketConnection, SocketFactory } from "./socket";
 import { AnyTool } from "./tool";
+import { SubscriptionStore, type LinkSubscription } from "./subscriptions";
 
 export type LinkState = "idle" | "connecting" | "open" | "closed";
 
@@ -25,6 +26,14 @@ export type LinkEvents = {
     log: [string];
     /** The server is shutting this connection down deliberately. */
     goodbye: [{ reason: string; reconnectAfterMs: number }];
+    /**
+     * The set of things the server wants watched has changed.
+     *
+     * Fires on every snapshot and every delta, including the first one after connecting. Use it to
+     * set up whatever your platform needs in order to watch — a channel listener, a poll — and note
+     * that it can fire with an empty list, which means "nothing is subscribed right now".
+     */
+    subscriptions: [LinkSubscription[]];
 };
 
 export type LinkOptions = {
@@ -100,6 +109,7 @@ export class Link {
     private readonly emitter = new Emitter<LinkEvents>();
     private readonly tools = new Map<string, AnyTool>();
     private readonly hooks = new Map<string, AnyHook>();
+    private readonly subscriptionStore = new SubscriptionStore();
     private readonly pending = new Map<string, Pending>();
     private readonly calls = new Map<string, AbortController>();
 
@@ -124,6 +134,21 @@ export class Link {
             socketFactory: defaultSocketFactory,
             ...stripUndefined(options),
         } as Link["options"];
+
+        // A gap means a delta was missed, and the answer is always the same: ask for the snapshot
+        // again. Sent best-effort — if the socket has gone, the reconnect will bring a snapshot anyway.
+        this.subscriptionStore.onResyncNeeded = (have) => {
+            this.debug(`subscription epoch gap at ${have}, resyncing`);
+            try {
+                this.send("hook.subscriptions.resync", { have });
+            } catch {
+                // Disconnected mid-gap. The next connect re-declares and is told again.
+            }
+        };
+
+        this.subscriptionStore.onChange = (subscriptions) => {
+            this.emitter.emit("subscriptions", subscriptions);
+        };
     }
 
     // =============================================
@@ -282,6 +307,9 @@ export class Link {
         this.identity = undefined;
         this.connecting = undefined;
         this.currentState = willReconnect ? "connecting" : "closed";
+        // Nothing about subscriptions survives a socket: the server re-sends the set on every
+        // connect, so holding the old one would only risk reporting against ids that are gone.
+        this.subscriptionStore.reset();
         this.stopHeartbeat();
         this.failPending(new LinkError("disconnected", `The link disconnected (${code}${reason ? `: ${reason}` : ""}).`));
 
@@ -358,6 +386,44 @@ export class Link {
         const frame = await this.exchange("hook.register", hook.declaration(), { awaitReady: false });
         hook.sourceId = (frame.payload as { ids?: string[] }).ids?.[0];
         this.debug(`registered hook ${hook.id}`);
+    }
+
+    /**
+     * Called by `Hook.report`.
+     *
+     * Sends nothing when the event matched nothing, which is the entire volume story: a busy channel
+     * produces thousands of events a day that no reflex asked about, and none of them reach the wire.
+     *
+     * The epoch travels with the frame so the server can tell a stale view from a bad one — an id
+     * that was valid a moment ago is a race, not a bug worth complaining about.
+     */
+    async reportHookEvent(hookId: string, event: string, payload?: Record<string, unknown>): Promise<string[]> {
+        await this.ready();
+
+        const sourceId = this.hooks.get(hookId)?.sourceId ?? hookId;
+        const subscriptionIds = this.subscriptionStore.match({ sourceId, event, payload });
+        if (subscriptionIds.length === 0) return [];
+
+        this.send("hook.event", {
+            sourceId,
+            subscriptionIds,
+            event,
+            ...(payload ? { payload } : {}),
+            epoch: this.subscriptionStore.epoch,
+        });
+
+        return subscriptionIds;
+    }
+
+    /** Called by `Hook.subscriptions`. */
+    hookSubscriptions(hookId: string): LinkSubscription[] {
+        const sourceId = this.hooks.get(hookId)?.sourceId;
+        return sourceId ? this.subscriptionStore.forSource(sourceId) : [];
+    }
+
+    /** Everything this link has been asked to watch, across all of its hooks. */
+    get subscriptions(): LinkSubscription[] {
+        return this.subscriptionStore.all();
     }
 
     /** Called by `Hook.emit`. */
@@ -481,6 +547,12 @@ export class Link {
                 this.debug(`call ${callId} cancelled: ${reason}`);
                 return;
             }
+            case "hook.subscriptions":
+                this.subscriptionStore.applySnapshot(frame.payload);
+                return;
+            case "hook.subscriptions.delta":
+                this.subscriptionStore.applyDelta(frame.payload);
+                return;
             case "log":
                 this.emitter.emit("log", frame.payload.log);
                 return;

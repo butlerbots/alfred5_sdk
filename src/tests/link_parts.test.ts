@@ -173,12 +173,19 @@ describe("Hooks", () => {
         });
     });
 
+    /** A `HookEmitter` that does nothing, for tests that only care about one of its methods. */
+    const noEmitter = {
+        emitHook: async () => undefined,
+        reportHookEvent: async () => [],
+        hookSubscriptions: () => [],
+    };
+
     it("emits through the link it is attached to", async () => {
         // Its own id goes over, not `sourceId`: an emit during startup happens before
         // registration has assigned one, so the link resolves it at send time.
         const emitted: unknown[] = [];
         const hook = doorbell();
-        hook.attach({ emitHook: async (...args) => { emitted.push(args); } });
+        hook.attach({ ...noEmitter, emitHook: async (...args) => { emitted.push(args); } });
 
         await hook.emit("rang", { camera: "front" });
 
@@ -187,7 +194,7 @@ describe("Hooks", () => {
 
     it("refuses an event it never declared, where the typo was made", async () => {
         const hook = doorbell();
-        hook.attach({ emitHook: async () => undefined });
+        hook.attach(noEmitter);
 
         await expect(hook.emit("ringed")).rejects.toThrow(/does not declare an event named "ringed"/);
     });

@@ -1,4 +1,5 @@
 import { LinkHookDeclaration, LinkHookEventDeclaration } from "./protocol";
+import type { LinkSubscription } from "./subscriptions";
 import { JSONSchema, ToolSchema, toJSONSchema } from "./schema";
 
 export type HookConfig<S extends ToolSchema | undefined> = {
@@ -40,6 +41,13 @@ export type HookEmitter = {
      * which only exists once the hook has been registered.
      */
     emitHook(hookId: string, event: string, payload?: Record<string, unknown>, ownerId?: string): Promise<void>;
+    /**
+     * Reports an event against the subscriptions it matched, sending nothing when it
+     * matched none. Returns the ids that were reported.
+     */
+    reportHookEvent(hookId: string, event: string, payload?: Record<string, unknown>): Promise<string[]>;
+    /** The subscriptions the server has pushed for this hook's source. */
+    hookSubscriptions(hookId: string): LinkSubscription[];
 };
 
 /**
@@ -108,5 +116,45 @@ export class Hook<S extends ToolSchema | undefined = undefined> {
         // The local id, not `sourceId`: emitting during startup gets here before
         // registration has assigned one, and the link fills it in once it knows.
         await this.link.emitHook(this.id, event, payload, ownerId);
+    }
+
+    /**
+     * Reports that something happened, to whoever asked to be told.
+     *
+     * The difference from `emit` is where the filtering lives. `emit` hands the event to the server
+     * and lets it decide who cares, which means the server needs to understand your platform's
+     * payloads. `report` matches locally against the subscriptions the server pushed down, and sends
+     * only the ids that matched — so "messages in #support from non-bots" stays knowledge that lives
+     * in your code, and an event nobody subscribed to costs nothing at all.
+     *
+     * Returns the subscription ids reported, which is `[]` when nothing matched. `[]` is the common
+     * case in a busy channel and is not an error.
+     *
+     * Match it yourself when the condition is more than field equality — `subscriptions` gives you the
+     * list, including `identities` for "is this about *my* user" questions — and pass the ids to
+     * `reportTo`.
+     */
+    async report(event: string, payload?: Record<string, unknown>): Promise<string[]> {
+        if (!this.link) {
+            throw new Error(`Hook "${this.id}" is not on a link yet — call link.addHook(hook) first.`);
+        }
+
+        // Caught here rather than on the wire: a typo should fail where it was made.
+        if (!this.config.events.some(declared => declared.name === event)) {
+            const declared = this.config.events.map(entry => entry.name).join(", ") || "none";
+            throw new Error(`Hook "${this.id}" does not declare an event named "${event}". Declared: ${declared}.`);
+        }
+
+        return this.link.reportHookEvent(this.id, event, payload);
+    }
+
+    /**
+     * What the server has asked this hook to watch.
+     *
+     * Empty until the link is connected and the snapshot has arrived, and empty again after a
+     * disconnect — nothing is persisted, because the server re-sends it on every connect.
+     */
+    get subscriptions(): LinkSubscription[] {
+        return this.link?.hookSubscriptions(this.id) ?? [];
     }
 }
