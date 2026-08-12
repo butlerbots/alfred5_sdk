@@ -124,7 +124,7 @@ export type LinkServerPayloads = {
         callId: string;
         localId: string;
         args: unknown;
-        meta: { userId: string; chatId?: string; runId: string };
+        meta: { userId: string; chatId?: string; runId: string; identities?: Record<string, string> };
         timeoutMs: number;
     };
     "tool.cancel": { callId: string; reason: string };
