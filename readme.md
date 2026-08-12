@@ -130,9 +130,23 @@ Why this is the better path:
 
 `subscription.prefilter` is applied for you by `report` — a dot-path map of conditions, all ANDed,
 scalars or arrays (`{ "author.bot": false, "channel.id": ["1", "2"] }`). It is a volume gate, not a
-query language: anything it cannot express, match yourself with `hook.subscriptions` and pass the
-ids you chose. Ignoring prefilters entirely is still *correct*, just louder — the server evaluates
+query language. Ignoring prefilters entirely is still *correct*, just louder — the server evaluates
 them again before spending anything.
+
+For a condition that is not field equality — "mentions my user", "within 50 metres", "the third time
+today" — decide with real code and use `reportTo`:
+
+```ts
+const mine = doorbell.subscriptions.filter(
+  (s) => s.identities?.discord && message.mentions.users.has(s.identities.discord),
+);
+
+await doorbell.reportTo(mine.map((s) => s.subscriptionId), "rang", payload);
+```
+
+`reportTo` does not apply the prefilter — you already decided. It does drop any id this link isn't
+currently holding, so a subscription that disappeared between your decision and the call is a
+dropped report rather than a rejected frame.
 
 `subscription.identities` is how you answer "is this event about *my* user": a plain string map in
 namespaces you understand, e.g. `{ discord: "1897..." }`, present only for owners who have linked
