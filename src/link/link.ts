@@ -121,6 +121,8 @@ export class Link {
     private readonly calls = new Map<string, AbortController>();
 
     private socket: SocketConnection | null = null;
+    /** Every socket this link has opened and not yet closed, by generation. */
+    private readonly sockets = new Map<number, SocketConnection>();
     private frameCounter = 0;
     private currentState: LinkState = "idle";
     private identity?: { connectionId: string; scope: LinkScopeKind };
@@ -286,7 +288,10 @@ export class Link {
         this.failPending(closed);
         this.settleWaiters(this.attemptWaiters, closed);
         this.settleWaiters(this.openWaiters, closed);
-        this.socket?.close(1000, reason);
+
+        // Every socket, not just the current one: a link that is being closed for good must not
+        // leave anything of itself attached to the server.
+        for (const generation of [...this.sockets.keys()]) this.abandon(generation, reason);
         this.socket = null;
     }
 
@@ -311,12 +316,22 @@ export class Link {
         this.debug(`connecting to ${url.replace(/api_key=[^&]+/, "api_key=***")}`);
 
         try {
-            this.socket = this.options.socketFactory(url, protocols, {
+            const socket = this.options.socketFactory(url, protocols, {
                 onOpen: () => this.onOpen(generation),
                 onMessage: (data) => { if (generation === this.generation) this.onMessage(data); },
-                onClose: (code, reason) => this.onClose(generation, code, reason),
+                onClose: (code, reason) => {
+                    this.sockets.delete(generation);
+                    this.onClose(generation, code, reason);
+                },
                 onError: (error) => { if (generation === this.generation) this.emitter.emit("error", asError(error)); },
             });
+
+            // Held by generation, not only as `this.socket`, so a socket that stops being the
+            // current one can still be closed. One that is merely forgotten stays open at the far
+            // end: it has already said hello and registered its tools, so the server goes on serving
+            // it, and it answers websocket pings forever because the network stack does that for it.
+            this.sockets.set(generation, socket);
+            this.socket = socket;
         } catch (error) {
             // A factory that throws never produces a close event, so this failure is
             // reported and retried from here instead.
@@ -346,8 +361,10 @@ export class Link {
             this.identity = identity;
 
             await this.registerAll();
-            // Registration is several round trips; the socket may have gone during them.
-            if (generation !== this.generation) return;
+            // Registration is several round trips; the socket may have gone during them. It is fully
+            // registered at the server by now, so abandoning it quietly would leave it serving tools
+            // nothing here will ever answer.
+            if (generation !== this.generation) return this.abandon(generation, "superseded during handshake");
 
             this.attempting = false;
             this.currentState = "open";
@@ -358,7 +375,7 @@ export class Link {
             this.settleWaiters(this.openWaiters);
             this.emitter.emit("connect", identity);
         }).catch((error: Error) => {
-            if (generation !== this.generation) return;
+            if (generation !== this.generation) return this.abandon(generation, "superseded during handshake");
 
             this.emitter.emit("error", error);
             this.settleWaiters(this.attemptWaiters, error);
@@ -383,13 +400,29 @@ export class Link {
     private dropSocket(generation: number, code: number, reason: string): void {
         if (generation !== this.generation) return;
 
-        const socket = this.socket;
         this.onClose(generation, code, reason);
+        // 1006 is reserved and rejected by browsers; anything else we raise is a valid
+        // application code.
+        this.abandon(generation, reason, code === 1006 ? 1000 : code);
+    }
+
+    /**
+     * Closes a socket this end has stopped using, whatever generation it belongs to.
+     *
+     * Every path that walks away from a socket goes through here. Forgetting one is not harmless:
+     * the server has no way to tell an abandoned connection from a live one — it has said hello,
+     * registered its tools and claimed its link id — so it keeps it, keeps serving from it, and
+     * hands the link id back and forth between it and its replacements.
+     */
+    private abandon(generation: number, reason: string, code = 1000): void {
+        const socket = this.sockets.get(generation);
+        if (!socket) return;
+
+        this.sockets.delete(generation);
+        if (this.socket === socket) this.socket = null;
 
         try {
-            // 1006 is reserved and rejected by browsers; anything else we raise is a valid
-            // application code.
-            socket?.close(code === 1006 ? 1000 : code, reason);
+            socket.close(code, reason);
         } catch {
             // Already gone, which is the outcome we wanted anyway.
         }

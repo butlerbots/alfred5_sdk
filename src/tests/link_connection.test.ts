@@ -539,3 +539,33 @@ describe("Link stability", () => {
         expect(socket.ofType("hook.event")).toHaveLength(1);
     });
 });
+
+// =============================================
+// NOTHING IS LEFT ATTACHED
+// =============================================
+
+describe("Link sockets are never abandoned", () => {
+    it("closes the socket it gives up on, rather than leaving it attached", async () => {
+        // The far end cannot tell an abandoned socket from a live one: it has said hello and
+        // registered its tools, so it keeps serving it, and it answers websocket pings forever
+        // because the network stack does that for it. Production accumulated five of these from a
+        // single process, each still holding the link id and taking it back on every reconnect.
+        const { link, connect, nextSocket } = setup({ reconnect: true, heartbeatMs: 20, requestTimeoutMs: 20 });
+        const first = await connect();
+
+        // Its pings go unanswered, so the link gives up on it — and must not walk away silently.
+        await nextSocket(2);
+        expect(first.closed).toBeDefined();
+        expect(link.state).not.toBe("closed");
+    });
+
+    it("closes every socket it has opened when the link is closed for good", async () => {
+        const { link, sockets, connect } = setup({ reconnect: true });
+        const first = await connect();
+
+        link.close("done");
+
+        expect(first.closed).toBeDefined();
+        expect(sockets.every(socket => socket.closed)).toBe(true);
+    });
+});
