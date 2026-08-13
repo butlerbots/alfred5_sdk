@@ -74,6 +74,13 @@ type Pending = {
     timer?: ReturnType<typeof setTimeout>;
 };
 
+/** Somebody parked until the link is usable. See `wait`. */
+type Waiter = {
+    resolve(): void;
+    reject(error: Error): void;
+    timer?: ReturnType<typeof setTimeout>;
+};
+
 export type ExchangeOptions = {
     /** Which reply ends the exchange. Defaults to an `ack`. */
     isDone?(frame: LinkServerFrame): boolean;
@@ -117,8 +124,22 @@ export class Link {
     private frameCounter = 0;
     private currentState: LinkState = "idle";
     private identity?: { connectionId: string; scope: LinkScopeKind };
-    private connecting?: Promise<this>;
-    private readySignal?: { promise: Promise<void>; resolve(): void; reject(error: Error): void };
+    /**
+     * Which socket the callbacks below belong to.
+     *
+     * Every handler carries the generation it was made for and does nothing once that is
+     * no longer current. Without it a late `close` from a socket we have already replaced
+     * tears down its successor — one blip turning into a link that flaps for the life of
+     * the process.
+     */
+    private generation = 0;
+    /** True from the moment a socket is created until it is open or gone. */
+    private attempting = false;
+    private reconnectTimer?: ReturnType<typeof setTimeout>;
+    /** Settled per attempt: this is what `connect()` awaits. */
+    private readonly attemptWaiters: Waiter[] = [];
+    /** Settled when the link opens, however many attempts that takes. `ready()` awaits these. */
+    private readonly openWaiters: Waiter[] = [];
     private reconnectAttempt = 0;
     private reconnectAfterMs = 0;
     private heartbeat?: ReturnType<typeof setInterval>;
@@ -212,63 +233,105 @@ export class Link {
     // LIFECYCLE
     // =============================================
 
-    /** Connects, resolving once every tool and hook has been registered. */
+    /**
+     * Connects, resolving once every tool and hook has been registered.
+     *
+     * Rejects if *this* attempt fails. When `reconnect` is on the link keeps trying in
+     * the background regardless, so a caller can either await this again or just listen
+     * for the `connect` event.
+     */
     connect(): Promise<this> {
         if (this.currentState === "open") return Promise.resolve(this);
-        if (this.connecting) return this.connecting;
 
         this.closedByUs = false;
-        this.connecting = this.openSocket().then(() => this, error => {
-            this.connecting = undefined;
-            throw error;
-        });
+        if (this.currentState === "closed") this.currentState = "idle";
 
-        return this.connecting;
+        // Joins whatever attempt is already in flight — or already scheduled — rather than
+        // racing a second socket against it.
+        const waited = this.wait(this.attemptWaiters, 0);
+        this.ensureAttempting();
+
+        return waited.then(() => this);
     }
 
-    /** Resolves when the link is usable, connecting first if it has not been asked to yet. */
+    /**
+     * Resolves when the link is usable, connecting first if it has not been asked to yet.
+     *
+     * Bounded by `requestTimeoutMs`, and it never opens a socket of its own while one is
+     * in flight: the callers are hook emits and tool replies, which are worth sending now
+     * or not at all. Waiting out a long outage here used to mean a new connection per
+     * event.
+     */
     async ready(): Promise<void> {
         if (this.currentState === "open") return;
-        if (this.currentState === "closed") throw new Error("This link has been closed.");
-        await this.connect();
+        if (this.currentState === "closed") throw new LinkError("closed", "This link has been closed.");
+
+        const waited = this.wait(this.openWaiters, this.options.requestTimeoutMs);
+        this.ensureAttempting();
+
+        await waited;
     }
 
     /** Closes for good. Registrations are released server-side as the socket drops. */
     close(reason = "client closed"): void {
+        const closed = new LinkError("closed", "The link was closed.");
+
         this.closedByUs = true;
         this.currentState = "closed";
+        // Orphans the live socket's callbacks, so its close cannot reopen anything.
+        this.generation += 1;
+        this.attempting = false;
         this.stopHeartbeat();
-        this.failPending(new LinkError("closed", "The link was closed."));
+        this.clearReconnect();
+        this.failPending(closed);
+        this.settleWaiters(this.attemptWaiters, closed);
+        this.settleWaiters(this.openWaiters, closed);
         this.socket?.close(1000, reason);
         this.socket = null;
-        this.connecting = undefined;
-        this.readySignal = undefined;
     }
 
-    private openSocket(): Promise<void> {
+    /**
+     * Starts an attempt, but only when there is nothing to join.
+     *
+     * The single door to opening a socket: an attempt in flight, or a reconnect already
+     * waiting out its backoff, is the attempt.
+     */
+    private ensureAttempting(): void {
+        if (this.closedByUs || this.currentState === "open") return;
+        if (this.attempting || this.reconnectTimer) return;
+        this.openSocket();
+    }
+
+    private openSocket(): void {
         this.currentState = "connecting";
+        this.attempting = true;
 
-        const signal = deferred();
-        this.readySignal = signal;
-
+        const generation = ++this.generation;
         const { url, protocols } = buildHandshake(this.options.serverUrl, "link", this.options.apiKey);
         this.debug(`connecting to ${url.replace(/api_key=[^&]+/, "api_key=***")}`);
 
         try {
             this.socket = this.options.socketFactory(url, protocols, {
-                onOpen: () => this.onOpen(),
-                onMessage: (data) => this.onMessage(data),
-                onClose: (code, reason) => this.onClose(code, reason),
-                onError: (error) => this.emitter.emit("error", asError(error)),
+                onOpen: () => this.onOpen(generation),
+                onMessage: (data) => { if (generation === this.generation) this.onMessage(data); },
+                onClose: (code, reason) => this.onClose(generation, code, reason),
+                onError: (error) => { if (generation === this.generation) this.emitter.emit("error", asError(error)); },
             });
         } catch (error) {
-            signal.reject(asError(error));
+            // A factory that throws never produces a close event, so this failure is
+            // reported and retried from here instead.
+            const failure = asError(error);
+            this.socket = null;
+            this.attempting = false;
+            this.emitter.emit("error", failure);
+            this.settleWaiters(this.attemptWaiters, failure);
+            this.retryOrGiveUp(failure);
         }
-
-        return signal.promise;
     }
 
-    private onOpen(): void {
+    private onOpen(generation: number): void {
+        if (generation !== this.generation) return;
+
         // The handshake declares who we are; nothing else may be sent before it.
         void this.exchange("hello", {
             linkId: this.options.linkId,
@@ -279,45 +342,94 @@ export class Link {
             isDone: (frame) => frame.type === "welcome",
         }).then(async (frame) => {
             const welcome = frame.payload as LinkEvents["connect"][0] & { protocolVersion: number };
-            this.identity = { connectionId: welcome.connectionId, scope: welcome.scope };
+            const identity = { connectionId: welcome.connectionId, scope: welcome.scope };
+            this.identity = identity;
 
             await this.registerAll();
+            // Registration is several round trips; the socket may have gone during them.
+            if (generation !== this.generation) return;
 
+            this.attempting = false;
             this.currentState = "open";
             this.reconnectAttempt = 0;
             this.reconnectAfterMs = 0;
-            this.startHeartbeat();
-            this.readySignal?.resolve();
-            this.emitter.emit("connect", this.identity);
+            this.startHeartbeat(generation);
+            this.settleWaiters(this.attemptWaiters);
+            this.settleWaiters(this.openWaiters);
+            this.emitter.emit("connect", identity);
         }).catch((error: Error) => {
-            this.emitter.emit("error", error);
+            if (generation !== this.generation) return;
 
-            // A rejected claim or an unsupported protocol will not fix itself by
-            // trying again, so this stops rather than looping.
-            this.closedByUs = true;
-            this.readySignal?.reject(error);
-            this.socket?.close(1000, "handshake failed");
+            this.emitter.emit("error", error);
+            this.settleWaiters(this.attemptWaiters, error);
+
+            // Only the server saying "do not come back" stops us: a rejected claim or an
+            // unsupported protocol will not fix itself. Everything else that can land here —
+            // a timeout, a socket dropped mid-registration, a transient server error — is
+            // precisely what reconnecting is for. Treating all of it as fatal left the link
+            // dead for the life of the process.
+            if (error instanceof LinkError && error.fatal) this.closedByUs = true;
+            this.dropSocket(generation, 1000, "handshake failed");
         });
     }
 
-    private onClose(code: number, reason: string): void {
+    /**
+     * Abandons a socket and treats it as closed right now.
+     *
+     * A connection that died without a close frame can take minutes to report it, or
+     * never, so the close is synthesised rather than waited for. Bumping the generation
+     * means the real event, whenever it turns up, is ignored.
+     */
+    private dropSocket(generation: number, code: number, reason: string): void {
+        if (generation !== this.generation) return;
+
+        const socket = this.socket;
+        this.onClose(generation, code, reason);
+
+        try {
+            // 1006 is reserved and rejected by browsers; anything else we raise is a valid
+            // application code.
+            socket?.close(code === 1006 ? 1000 : code, reason);
+        } catch {
+            // Already gone, which is the outcome we wanted anyway.
+        }
+    }
+
+    private onClose(generation: number, code: number, reason: string): void {
+        if (generation !== this.generation) return;
+        // Whatever else this socket has to say is now somebody else's news.
+        this.generation += 1;
+
         const willReconnect = this.options.reconnect && !this.closedByUs;
+        const error = new LinkError("disconnected", `The link disconnected (${code}${reason ? `: ${reason}` : ""}).`);
 
         this.socket = null;
         this.identity = undefined;
-        this.connecting = undefined;
+        this.attempting = false;
         this.currentState = willReconnect ? "connecting" : "closed";
         // Nothing about subscriptions survives a socket: the server re-sends the set on every
         // connect, so holding the old one would only risk reporting against ids that are gone.
         this.subscriptionStore.reset();
         this.stopHeartbeat();
-        this.failPending(new LinkError("disconnected", `The link disconnected (${code}${reason ? `: ${reason}` : ""}).`));
+        this.failPending(error);
+        this.settleWaiters(this.attemptWaiters, error);
 
         this.emitter.emit("disconnect", { code, reason, willReconnect });
-        this.readySignal?.reject(new LinkError("disconnected", `The link disconnected (${code}).`));
-        this.readySignal = undefined;
 
         if (willReconnect) this.scheduleReconnect();
+        else this.settleWaiters(this.openWaiters, error);
+    }
+
+    /** Retries when it is allowed to, and tells everyone waiting when it is not. */
+    private retryOrGiveUp(error: Error): void {
+        if (this.options.reconnect && !this.closedByUs) {
+            this.currentState = "connecting";
+            this.scheduleReconnect();
+            return;
+        }
+
+        this.currentState = "closed";
+        this.settleWaiters(this.openWaiters, error);
     }
 
     /**
@@ -327,6 +439,8 @@ export class Link {
      * a fixed delay produces.
      */
     private scheduleReconnect(): void {
+        this.clearReconnect();
+
         const ceiling = Math.min(
             this.options.maxReconnectDelayMs,
             this.options.minReconnectDelayMs * 2 ** this.reconnectAttempt,
@@ -336,29 +450,93 @@ export class Link {
         this.reconnectAttempt += 1;
         this.debug(`reconnecting in ${Math.round(delay)}ms (attempt ${this.reconnectAttempt})`);
 
-        const timer = setTimeout(() => {
-            if (this.closedByUs) return;
-            this.openSocket().catch(error => this.emitter.emit("error", asError(error)));
+        this.reconnectTimer = setTimeout(() => {
+            this.reconnectTimer = undefined;
+            if (this.closedByUs || this.currentState === "open" || this.attempting) return;
+            this.openSocket();
         }, delay);
 
-        unref(timer);
+        unref(this.reconnectTimer);
     }
 
-    private startHeartbeat(): void {
+    private clearReconnect(): void {
+        if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+        this.reconnectTimer = undefined;
+    }
+
+    /**
+     * Pings on an interval and, the important half, notices when a ping goes unanswered.
+     *
+     * A websocket can die without a close frame — a dropped route, a proxy that forgets
+     * the connection, a suspended machine — leaving both ends convinced they are
+     * connected while every frame sent into it vanishes. An unanswered ping is the only
+     * evidence this end will ever get, so it is treated as a dead connection and
+     * reconnected rather than swallowed.
+     */
+    private startHeartbeat(generation: number): void {
         if (!this.options.heartbeatMs) return;
+        this.stopHeartbeat();
 
         this.heartbeat = setInterval(() => {
+            if (generation !== this.generation) return;
+
             // The reply is consumed by the exchange, so it never reaches log listeners.
-            this.exchange("ping", {}, { isDone: (frame) => frame.type === "log" })
-                .catch(() => undefined);
+            this.exchange("ping", {}, {
+                awaitReady: false,
+                isDone: (frame) => frame.type === "log",
+                timeoutMs: this.heartbeatTimeoutMs(),
+            }).catch(() => {
+                if (generation !== this.generation) return;
+                this.debug("heartbeat went unanswered, treating the connection as dead");
+                this.dropSocket(generation, 4000, "heartbeat timeout");
+            });
         }, this.options.heartbeatMs);
 
         unref(this.heartbeat);
     }
 
+    /**
+     * Never longer than the interval itself: a second ping in flight tells us nothing new.
+     *
+     * Floored so that a very short interval cannot declare a merely busy connection dead.
+     */
+    private heartbeatTimeoutMs(): number {
+        return Math.max(250, Math.min(this.options.requestTimeoutMs, this.options.heartbeatMs));
+    }
+
     private stopHeartbeat(): void {
         if (this.heartbeat) clearInterval(this.heartbeat);
         this.heartbeat = undefined;
+    }
+
+    // =============================================
+    // WAITING
+    // =============================================
+
+    /** Parks a caller until someone settles the list it was parked in. 0 waits forever. */
+    private wait(waiters: Waiter[], timeoutMs: number): Promise<void> {
+        return new Promise<void>((resolve, reject) => {
+            const waiter: Waiter = { resolve, reject };
+
+            if (timeoutMs > 0) {
+                waiter.timer = setTimeout(() => {
+                    const index = waiters.indexOf(waiter);
+                    if (index >= 0) waiters.splice(index, 1);
+                    reject(new LinkError("timeout", `The link was not open within ${timeoutMs}ms.`));
+                }, timeoutMs);
+                unref(waiter.timer);
+            }
+
+            waiters.push(waiter);
+        });
+    }
+
+    private settleWaiters(waiters: Waiter[], error?: Error): void {
+        for (const waiter of waiters.splice(0, waiters.length)) {
+            if (waiter.timer) clearTimeout(waiter.timer);
+            if (error) waiter.reject(error);
+            else waiter.resolve();
+        }
     }
 
     // =============================================
@@ -403,7 +581,13 @@ export class Link {
         payload?: Record<string, unknown>,
         chosenIds?: string[],
     ): Promise<string[]> {
-        await this.ready();
+        // Not `ready()`: a report is only worth anything now, and while the link is down the
+        // subscription set is empty anyway — so waiting would mean holding a busy guild's
+        // events open to match them against nothing.
+        if (this.currentState !== "open") {
+            this.debug(`dropped ${event}: the link is not connected`);
+            return [];
+        }
 
         const sourceId = this.hooks.get(hookId)?.sourceId ?? hookId;
 
@@ -649,17 +833,6 @@ export class Link {
 // =============================================
 // HELPERS
 // =============================================
-
-function deferred(): { promise: Promise<void>; resolve(): void; reject(error: Error): void } {
-    let resolve!: () => void;
-    let reject!: (error: Error) => void;
-    const promise = new Promise<void>((res, rej) => { resolve = res; reject = rej; });
-
-    // Rejections are surfaced through connect() and the error event; an unobserved
-    // one here must not take the process down.
-    promise.catch(() => undefined);
-    return { promise, resolve, reject };
-}
 
 function asError(value: unknown): Error {
     if (value instanceof Error) return value;
