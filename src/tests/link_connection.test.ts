@@ -377,3 +377,165 @@ describe("Link connection life", () => {
         link.close();
     });
 });
+
+// =============================================
+// STABILITY
+// =============================================
+
+/**
+ * The behaviours that decide whether a long-lived link stays up.
+ *
+ * Every test here is a shape of instability seen in production against the Discord bot:
+ * a link that flapped, or one that went quiet and never came back.
+ */
+describe("Link stability", () => {
+    it("never opens a second socket, however many callers ask at once", async () => {
+        // Hook reports and tool replies all wait on `ready()`. Each of those waits used to be
+        // able to open its own socket while a reconnect was pending, so one blip on a busy
+        // platform became a fleet of connections all claiming the same linkId — and
+        // last-writer-wins meant they took turns tearing each other's registrations down.
+        const { link, sockets, connect, handshake, nextSocket } = setup({ reconnect: true });
+        const hook = new Hook({ id: "doorbell", name: "Doorbell", description: "Rang", events: [{ name: "rang" }] });
+        link.addHook(hook);
+
+        const first = await connect();
+        first.drop();
+
+        const waiting = [
+            link.connect().catch(() => undefined),
+            link.ready().catch(() => undefined),
+            link.ready().catch(() => undefined),
+            hook.emit("rang", { camera: "front" }).catch(() => undefined),
+        ];
+
+        await handshake(await nextSocket(2));
+        await Promise.all(waiting);
+
+        expect(sockets).toHaveLength(2);
+        expect(link.state).toBe("open");
+        expect(sockets[1].ofType("hook.emit")).toHaveLength(1);
+    });
+
+    it("ignores a close from a socket it has already replaced", async () => {
+        // The successor is what matters: a late close from a socket we gave up on used to null
+        // out the live one and reset the state around it, so the link flapped until the
+        // process died.
+        const { link, sockets, connect, handshake, nextSocket } = setup({ reconnect: true });
+        const first = await connect();
+
+        first.drop();
+        const second = await handshake(await nextSocket(2));
+
+        first.drop(1006, "late news");
+        await flush();
+
+        expect(link.state).toBe("open");
+        expect(link.connectionId).toBe("conn-2");
+        expect(sockets).toHaveLength(2);
+        expect(second.closed).toBeUndefined();
+    });
+
+    it("keeps reconnecting after a socket dies during its handshake", async () => {
+        // Registration is several round trips, and anything failing in them used to be judged
+        // fatal — including a plain disconnect, which is the one thing reconnecting is for.
+        const { link, connect, handshake, nextSocket } = setup({ reconnect: true });
+        link.addTool(new Tool({ id: "brew", description: "Brew coffee", run: () => "done" }));
+
+        const connecting = link.connect().catch(() => undefined);
+        const first = await nextSocket(1);
+        first.open();
+        await flush();
+        first.drop(1006, "abnormal");
+        await connecting;
+
+        await handshake(await nextSocket(2));
+
+        expect(link.state).toBe("open");
+        expect(link.connectionId).toBe("conn-2");
+        // And the link is usable again, rather than stuck refusing on a closed state.
+        await expect(link.ready()).resolves.toBeUndefined();
+        void connect;
+    });
+
+    it("keeps reconnecting after a registration error that could clear up", async () => {
+        // A claim conflict is somebody else holding the linkId right now, which a redeploy
+        // resolves on its own within seconds.
+        const { link, sockets, handshake, nextSocket } = setup({ reconnect: true });
+        link.addTool(new Tool({ id: "brew", description: "Brew coffee", run: () => "done" }));
+
+        const connecting = link.connect().catch(() => undefined);
+        const first = await nextSocket(1);
+        first.open();
+        await flush();
+        first.push("welcome", { connectionId: "conn-1", linkId: "coffee", scope: "user", protocolVersion: 1 }, first.ofType("hello")[0].id);
+        await flush();
+        first.push("error", { code: "claim_conflict", error: "Another connection holds that linkId." }, first.ofType("tool.register")[0].id);
+        await connecting;
+
+        await handshake(await nextSocket(2));
+
+        expect(sockets).toHaveLength(2);
+        expect(link.state).toBe("open");
+    });
+
+    it("stops for good when the server says the failure is fatal", async () => {
+        // The other half of the rule: a declaration the server will never accept, or a
+        // protocol it cannot speak, is identical next time.
+        const { link, sockets, nextSocket } = setup({ reconnect: true });
+        link.addTool(new Tool({ id: "brew", description: "Brew coffee", run: () => "done" }));
+
+        const connecting = link.connect();
+        const first = await nextSocket(1);
+        first.open();
+        await flush();
+        first.push("welcome", { connectionId: "conn-1", linkId: "coffee", scope: "user", protocolVersion: 1 }, first.ofType("hello")[0].id);
+        await flush();
+        first.push("error", {
+            code: "invalid_declaration",
+            error: "That tool has no description.",
+            fatal: true,
+        }, first.ofType("tool.register")[0].id);
+
+        await expect(connecting).rejects.toThrow(/no description/);
+        await new Promise(resolve => setTimeout(resolve, 25));
+
+        expect(sockets).toHaveLength(1);
+        expect(link.state).toBe("closed");
+    });
+
+    it("treats an unanswered heartbeat as a dead connection", async () => {
+        // The failure this catches has no close event at all: a route disappears, or a proxy
+        // forgets the connection, and both ends go on believing they are connected while every
+        // frame sent into it vanishes. An unanswered ping is the only evidence there is.
+        const { link, connect, handshake, nextSocket } = setup({ reconnect: true, heartbeatMs: 5, requestTimeoutMs: 250 });
+        const first = await connect();
+
+        const second = await nextSocket(2);
+        expect(first.closed).toMatchObject({ code: 4000 });
+
+        await handshake(second);
+        expect(link.state).toBe("open");
+    });
+
+    it("drops hook reports while the link is down instead of waiting on them", async () => {
+        // A busy guild produces events faster than a reconnect completes, and a report is only
+        // worth anything now: the server re-sends the subscription set on connect, so there is
+        // nothing left to match a held event against anyway.
+        const { link, connect } = setup({ reconnect: false });
+        const hook = new Hook({ id: "doorbell", name: "Doorbell", description: "Rang", events: [{ name: "rang" }] });
+        link.addHook(hook);
+
+        const socket = await connect();
+        socket.push("hook.subscriptions", {
+            epoch: 1,
+            subscriptions: [{ subscriptionId: "rx-1", sourceId: "link:coffee/doorbell", event: "rang" }],
+        });
+        await flush();
+
+        expect(await hook.report("rang", { camera: "front" })).toEqual(["rx-1"]);
+
+        socket.drop();
+        expect(await hook.report("rang", { camera: "front" })).toEqual([]);
+        expect(socket.ofType("hook.event")).toHaveLength(1);
+    });
+});
