@@ -41,15 +41,19 @@ const { text } = await convo.ask("Hey there Alfred!");
 
 ### Streaming
 
-Alfred streams a reply as it writes it. Each event carries either the whole message so far
-or just the piece it added, never both:
+Alfred streams a reply as it writes it. A message opens with a whole value, is extended a
+piece at a time, and finishes whole again. No event carries both:
 
 ```jsonc
-{ "messageId": "m1", "message": "Good day to you", "completed": false }  // whole: replace
-{ "messageId": "m1", "delta": " to you", "completed": false }            // added: append
+{ "messageId": "m1", "message": "Good day", "completed": false, "metadata": {...} }
+{ "messageId": "m1", "delta": " to you", "completed": false }
+{ "messageId": "m1", "message": "Good day to you", "completed": true, "metadata": {...} }
 ```
 
-The SDK puts them back together, so `payload.message` is always the whole message:
+Deltas travel bare — no metadata block, since it is identical on every frame of a message
+and many times the size of the few characters a delta carries. The SDK remembers it from
+the frame that opened the message and puts it back, so **every event you receive has both
+the whole message and its metadata**, exactly as it always did:
 
 ```typescript
 convo.send("Tell me a story", (res) => {
@@ -68,9 +72,9 @@ stuttering one — append it when it is there, and replace with `message` when i
 after a reconnect. Do not read `completed` to tell the two apart — a whole message arrives
 with `completed: false` whenever you are being caught up mid-answer.
 
-`accumulateStream: false` hands you the wire payloads untouched, where a piece arrives as
-`delta` with no `message` beside it. Only worth it if you are appending anyway and want
-nothing between you and the socket.
+`accumulateStream: false` hands you the wire payloads untouched: deltas with no `message`
+beside them and no metadata. Only worth it if you are appending anyway and want nothing
+between you and the socket.
 
 ## Link
 

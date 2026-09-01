@@ -33,14 +33,28 @@ function sseServer(events: unknown[]) {
     return { server, url: `http://localhost:${server.port}` };
 }
 
-/** A chunk as the server now streams one: only what it added, under its own field. */
+const METADATA = { participantId: "alfred", model: "GPT-5", responseId: "r1" };
+
+/** The frame that opens a message: whole value, and the only one carrying the metadata. */
+const opening = (text: string, messageId = "m1") => ({
+    success: true,
+    data: {
+        response: {
+            type: "message",
+            payload: { message: text, messageId, completed: false },
+            metadata: METADATA,
+        },
+        convoId: "convo-1",
+    },
+});
+
+/** A chunk as the server now streams one: only what it added, and nothing else. */
 const delta = (text: string, messageId = "m1") => ({
     success: true,
     data: {
         response: {
             type: "message",
             payload: { delta: text, messageId, completed: false },
-            metadata: { participantId: "alfred" },
         },
         convoId: "convo-1",
     },
@@ -53,7 +67,7 @@ const whole = (text: string, completed = true, messageId = "m1") => ({
         response: {
             type: "message",
             payload: { message: text, messageId, completed },
-            metadata: { participantId: "alfred" },
+            metadata: METADATA,
         },
         convoId: "convo-1",
     },
@@ -65,7 +79,6 @@ const reasoningDelta = (text: string) => ({
         response: {
             type: "reasoning",
             payload: { delta: text, reasoningId: "t1", completed: false },
-            metadata: { participantId: "alfred" },
         },
         convoId: "convo-1",
     },
@@ -109,7 +122,7 @@ describe("Streamed messages", () => {
         // The server sends each token once; `message` is still the whole answer so far,
         // which is what every consumer of this SDK already renders.
         const received = await collect([
-            delta("Bond"), delta(", James"), delta(" Bond"), whole("Bond, James Bond"), completion(),
+            opening("Bond"), delta(", James"), delta(" Bond"), whole("Bond, James Bond"), completion(),
         ]);
 
         expect(messages(received).map(payload => payload.message)).toEqual([
@@ -123,26 +136,47 @@ describe("Streamed messages", () => {
     it("also says what each event added, for anyone appending", async () => {
         // Rendering the whole message per token is the client-side half of the same
         // problem, so the piece is offered as well as the whole.
-        const received = await collect([delta("Bond"), delta(", James"), whole("Bond, James"), completion()]);
+        const received = await collect([opening("Bond"), delta(", James"), whole("Bond, James"), completion()]);
 
-        expect(messages(received).map(payload => payload.delta)).toEqual(["Bond", ", James", undefined]);
+        expect(messages(received).map(payload => payload.delta)).toEqual([undefined, ", James", undefined]);
     });
 
     it("fills in the message a delta belongs to, keeping the delta itself", async () => {
-        const received = await collect([delta("Bond"), completion()]);
-        expect(messages(received)[0]).toMatchObject({ message: "Bond", delta: "Bond", messageId: "m1" });
+        const received = await collect([opening("Bond"), delta(", James"), completion()]);
+        expect(messages(received)[1]).toMatchObject({ message: "Bond, James", delta: ", James", messageId: "m1" });
+    });
+
+    it("puts back the metadata the server left off the deltas", async () => {
+        // The server sends it once per message rather than on all thousand frames. A
+        // caller should never know that happened.
+        const received = await collect([opening("Bond"), delta(", James"), whole("Bond, James"), completion()]);
+        const events = received.filter(entry => entry.data.response?.type === "message");
+
+        expect(events.map(entry => (entry.data.response as { metadata?: unknown }).metadata))
+            .toEqual([METADATA, METADATA, METADATA]);
+    });
+
+    it("does not carry metadata over from a message that has finished", async () => {
+        // Ids are reused across the steps of a turn. A new message opens with its own.
+        const next = { ...METADATA, responseId: "r2" };
+        const reopened = { ...opening("second"), data: { ...opening("second").data, response: { ...opening("second").data.response, metadata: next } } };
+
+        const received = await collect([opening("first"), whole("first"), reopened, completion()]);
+        const events = received.filter(entry => entry.data.response?.type === "message");
+
+        expect((events[2].data.response as { metadata?: unknown }).metadata).toEqual(next);
     });
 
     it("replaces rather than appends when a whole value arrives", async () => {
         // A reconnecting client is caught up with the answer so far. Appending that to
         // what it already had would duplicate half the message.
-        const received = await collect([delta("half a"), whole("half a cup", false), delta(" of tea"), completion()]);
+        const received = await collect([opening("half a"), whole("half a cup", false), delta(" of tea"), completion()]);
 
         expect(messages(received).map(payload => payload.message)).toEqual(["half a", "half a cup", "half a cup of tea"]);
     });
 
     it("keeps messages and reasoning apart", async () => {
-        const received = await collect([delta("Bond"), reasoningDelta("thinking"), delta(", James"), completion()]);
+        const received = await collect([opening("Bond"), reasoningDelta("thinking"), delta(", James"), completion()]);
 
         expect(messages(received).map(payload => payload.message)).toEqual(["Bond", "Bond, James"]);
         expect(received[1].data.response?.payload?.reasoning).toBe("thinking");
@@ -151,23 +185,27 @@ describe("Streamed messages", () => {
     it("starts a fresh message after one has finished", async () => {
         // Ids are reused across the steps of a turn, so a finished message must not leave
         // its text behind for the next one to be appended to.
-        const received = await collect([delta("first"), whole("first"), delta("second"), completion()]);
+        const received = await collect([opening("first"), whole("first"), opening("second"), completion()]);
 
         expect(messages(received).map(payload => payload.message)).toEqual(["first", "first", "second"]);
     });
 
     it("hands over the wire payloads untouched when asked to", async () => {
         // For a caller that appends anyway and wants nothing between it and the socket.
-        const received = await collect([delta("Bond"), delta(", James"), completion()], { accumulateStream: false });
+        const received = await collect([opening("Bond"), delta(", James"), completion()], { accumulateStream: false });
 
         expect(messages(received)).toEqual([
-            { delta: "Bond", messageId: "m1", completed: false },
+            { message: "Bond", messageId: "m1", completed: false },
             { delta: ", James", messageId: "m1", completed: false },
         ]);
+
+        // Including the bare deltas, metadata and all — or rather, metadata and none.
+        const bare = received.filter(entry => entry.data.response?.type === "message");
+        expect((bare[1].data.response as { metadata?: unknown }).metadata).toBeUndefined();
     });
 
     it("resolves ask() with the finished reply either way", async () => {
-        const events = [delta("Good"), delta(" day"), whole("Good day"), completion()];
+        const events = [opening("Good"), delta(" day"), whole("Good day"), completion()];
 
         const { server, url } = sseServer(events);
         try {

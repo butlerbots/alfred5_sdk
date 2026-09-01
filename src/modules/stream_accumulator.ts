@@ -12,9 +12,14 @@
  *     { messageId, message: "Good day to you", completed }   // the whole value: replace
  *     { messageId, delta: " to you", completed: false }      // what was added: append
  *
- * Callers should not have to care. This puts the message back together, so
- * `payload.message` is the whole message so far exactly as it always was, and keeps
- * `payload.delta` for anyone who would rather append than re-render.
+ * Deltas are also sent bare: no metadata block, since it is the same on every frame of a
+ * message and several times the size of the few characters a delta carries. The frame that
+ * opens a message brings it, and the one that finishes it brings it again.
+ *
+ * Callers should not have to care about any of that. This puts the message back together,
+ * so `payload.message` is the whole message so far exactly as it always was, restores the
+ * metadata onto every event, and keeps `payload.delta` for anyone who would rather append
+ * than re-render.
  *
  * Whole values arrive for the last event of a message and for anything replaying after a
  * reconnect, and they replace rather than extend. That is what makes a reconnect cheap and
@@ -31,7 +36,7 @@ type StreamedPayload = {
     completed?: boolean;
 };
 
-type StreamedEvent = { type?: string; payload?: StreamedPayload };
+type StreamedEvent = { type?: string; payload?: StreamedPayload; metadata?: unknown };
 
 type StreamedResponse = { success?: boolean; data?: { response?: StreamedEvent } };
 
@@ -44,11 +49,12 @@ const STREAMED_FIELDS = {
 /**
  * Rebuilds whole values from a stream of pieces.
  *
- * Stateful, and one per stream: it holds the text of every message the stream is still
- * writing, so a turn and a progress stream never see each other's.
+ * Stateful, and one per stream: it holds what every message the stream is still writing
+ * has said so far, so a turn and a progress stream never see each other's.
  */
 export function createStreamAccumulator(): (payload: unknown) => unknown {
-    const values = new Map<string, string>();
+    /** Text so far and the metadata it was opened with, per streamed id. */
+    const values = new Map<string, { text: string; metadata?: unknown }>();
 
     return (payload: unknown): unknown => {
         const response = payload as StreamedResponse;
@@ -67,12 +73,19 @@ export function createStreamAccumulator(): (payload: unknown) => unknown {
 
         if (typeof delta !== "string" && typeof whole !== "string") return payload;
 
-        const text = typeof delta === "string" ? (values.get(id) ?? "") + delta : whole as string;
+        const held = values.get(id);
+        const text = typeof delta === "string" ? (held?.text ?? "") + delta : whole as string;
+
+        // Deltas are sent without metadata, because it is identical on every frame of a
+        // message and many times the size of the text. The frame that opened the message
+        // carried it, so it is remembered here and handed back on every event — a caller
+        // sees it throughout, exactly as when the server repeated it a thousand times.
+        const metadata = event.metadata ?? held?.metadata;
 
         // A finished value is the last anyone will hear of that id. Holding it would only
         // leak, and ids are reused across the steps of a turn.
         if (event.payload.completed) values.delete(id);
-        else values.set(id, text);
+        else values.set(id, { text, metadata });
 
         return {
             ...response,
@@ -80,6 +93,7 @@ export function createStreamAccumulator(): (payload: unknown) => unknown {
                 ...response.data,
                 response: {
                     ...event,
+                    ...(metadata !== undefined ? { metadata } : {}),
                     payload: {
                         ...event.payload,
                         [fields.text]: text,
