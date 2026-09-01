@@ -3,6 +3,7 @@ import { CONFIG, APIPath } from "../config";
 import type { Link } from "../link/link";
 import { Emitter } from "../util/emitter";
 import { ConversationStream, ConversationTransport } from "./transport";
+import { createStreamAccumulator } from "./stream_accumulator";
 import { LinkConversationTransport } from "./transport_link";
 import { SSEConversationTransport, streamSSE } from "./transport_sse";
 import { RequestResponseV3, RequestResponseV4 } from "../types/type_registry";
@@ -75,6 +76,18 @@ export type ConversationOptions<V extends APIPath = "v4"> = {
      * have — everything else, including the payloads you receive, is identical.
      */
     transport?: "sse" | Link;
+    /**
+     * Whether streamed text is put back together for you. On by default.
+     *
+     * The server streams each message a piece at a time. With this on, `payload.message`
+     * is the whole message so far — what it has always been — and `payload.delta` is what
+     * the event added, for anyone who would rather append than re-render.
+     *
+     * Turn it off to be handed the wire payloads untouched, where a `chunk: "delta"`
+     * payload carries only the new text. Worth it only if you are appending anyway and
+     * want nothing between you and the socket.
+     */
+    accumulateStream?: boolean;
 }
 
 const DEFAULT_CONVO_API_V: APIPath = "v4";
@@ -87,6 +100,7 @@ export class Conversation<V extends APIPath = "v4"> {
     private options?: DialogueRequestOptions
     private events = new Emitter<{ convoId: [string] }>();
     private transport: ConversationTransport;
+    private accumulateStream: boolean;
     /** The link carrying this conversation, when it is not on SSE. */
     readonly link?: Link;
 
@@ -114,6 +128,7 @@ export class Conversation<V extends APIPath = "v4"> {
 
         this.apiKey = config.apiKey;
         this.debug = config.debug || false;
+        this.accumulateStream = config.accumulateStream ?? true;
 
         if (config.transport && config.transport !== "sse") {
             this.link = config.transport;
@@ -312,18 +327,22 @@ export class Conversation<V extends APIPath = "v4"> {
     fetchProgressStream(cb: (chunk: RequestResponseByVersion[V]) => any, options?: { afterEventId?: string }) {
         if (!this.convoId) throw new Error("Conversation ID is not set");
 
+        // A watcher joins mid-answer: it is caught up with whole values and then follows the
+        // rest a piece at a time, which the accumulator handles either way.
+        const receive = this.receiver(cb);
+
         if (this.transport.attach) {
             return this.transport.attach({
                 chatId: this.convoId,
                 ...(options?.afterEventId ? { afterEventId: options.afterEventId } : {}),
             }, {
-                payload: (payload) => cb(payload as RequestResponseByVersion[V]),
+                payload: receive,
                 convoId: () => { /* Already known: this stream is for a conversation that exists. */ },
             });
         }
 
         const url = formatURL(this.endpoints.progressStream, { chatId: this.convoId }, { apiKey: this.apiKey, debug: this.debug });
-        return streamSSE(url, { debug: this.debug, onPayload: (payload) => cb(payload as RequestResponseByVersion[V]) });
+        return streamSSE(url, { debug: this.debug, onPayload: receive });
     }
 
     /** 
@@ -355,15 +374,30 @@ export class Conversation<V extends APIPath = "v4"> {
 
     // LIFE CYCLE
 
+    /**
+     * One stream's worth of delivery: rebuilds whole values, then hands them to the caller.
+     *
+     * The accumulator is made per stream rather than per conversation because it holds the
+     * text of whatever is still being written, and two streams are two different answers.
+     */
+    private receiver(cb: (chunk: RequestResponseByVersion[V]) => any): (payload: unknown) => void {
+        if (!this.accumulateStream) return (payload) => cb(payload as RequestResponseByVersion[V]);
+
+        const accumulate = createStreamAccumulator();
+        return (payload) => cb(accumulate(payload) as RequestResponseByVersion[V]);
+    }
+
     /** Sends a message into the conversation */
     send(message: string, cb: (chunk: RequestResponseByVersion[V]) => any, options?: DialogueRequestOptions): ConversationStream {
+        const receive = this.receiver(cb);
+
         return this.transport.send({
             message,
             ...this.options, // options set for convo
             ...options,      // overwrite convo's for this call
             ...(this.convoId ? { chatId: this.convoId } : {}),
         }, {
-            payload: (payload) => cb(payload as RequestResponseByVersion[V]),
+            payload: receive,
             convoId: (convoId) => {
                 if (this.convoId === convoId) return;
                 this.convoId = convoId;
@@ -392,13 +426,16 @@ export class Conversation<V extends APIPath = "v4"> {
                     return;
                 }
 
-                const response = chunk.data.response as { type: string; payload?: { message?: string; participantId?: string } };
+                const response = chunk.data.response as { type: string; payload?: { message?: string; delta?: string; chunk?: "delta"; participantId?: string } };
                 const metadata = (chunk.data.response as { metadata?: { participantId?: string } }).metadata;
 
-                // Message chunks arrive cumulative, and Alfred's own notices are not part
-                // of the reply, so they are collected but not concatenated into it.
-                if (response.type === "message" && metadata?.participantId !== "system" && response.payload?.message) {
-                    text = response.payload.message;
+                // Alfred's own notices are not part of the reply, so they are collected but
+                // not concatenated into it. Appending a delta and replacing on a whole value
+                // is right whether or not the caller left accumulation on.
+                if (response.type === "message" && metadata?.participantId !== "system") {
+                    if (response.payload?.delta !== undefined) text += response.payload.delta;
+                    else if (response.payload?.chunk === "delta") text += response.payload.message ?? "";
+                    else if (response.payload?.message) text = response.payload.message;
                 }
 
                 if (chunk.data.quitStream) resolve({ text, convoId: this.convoId, events });

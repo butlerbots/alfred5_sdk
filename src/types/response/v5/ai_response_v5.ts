@@ -61,21 +61,46 @@ export type BaseResponseMetadata = {
 // =============================================
 
 export type MessagePayload = {
-    /** The message content */
+    /**
+     * The message content.
+     *
+     * Always the whole message so far, however it arrived: the SDK rebuilds it from the
+     * deltas the server streams. Turn that off with `accumulateStream: false` and this is
+     * the raw wire value instead — an append when `chunk` is `"delta"`.
+     */
     message: string;
     /** The UUID of this message */
     messageId: string;
     /** Whether this message chunk is the final one */
     completed: boolean;
+    /**
+     * What this event added to the message, when it added anything.
+     *
+     * Present on streamed chunks, absent on whole values — the final event of a message,
+     * and anything replayed after a reconnect. Append it if it is there and replace with
+     * `message` if it is not, and you never re-render text you already have.
+     */
+    delta?: string;
+    /**
+     * Set to `"delta"` when `message` is an append rather than the whole value.
+     *
+     * Only ever seen with `accumulateStream: false`; the SDK strips it once it has
+     * rebuilt the message.
+     */
+    chunk?: "delta";
 };
 
 export type ReasoningPayload = {
-    /** The reasoning content */
+    /** The reasoning content. Whole value, rebuilt from deltas — see {@link MessagePayload.message}. */
     reasoning: string;
     /** The UUID of this reasoning */
     reasoningId: string;
     /** Whether this reasoning chunk is the final one */
     completed: boolean;
+    /** What this event added. See {@link MessagePayload.delta}. */
+    delta?: string;
+    /** Set when `reasoning` is an append rather than the whole value. */
+    chunk?: "delta";
 };
 
 export type FilePayload = {

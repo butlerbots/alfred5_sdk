@@ -39,6 +39,32 @@ Or, when you only want the answer:
 const { text } = await convo.ask("Hey there Alfred!");
 ```
 
+### Streaming
+
+Alfred streams a reply as it writes it. Each event carries only the text it added, and the
+SDK puts the message back together for you, so `payload.message` is always the whole
+message so far:
+
+```typescript
+convo.send("Tell me a story", (res) => {
+  if (!res.success || res.data.response.type !== "message") return;
+
+  const { message, delta } = res.data.response.payload;
+  // message — everything written so far
+  // delta   — just what this event added, when it added anything
+});
+```
+
+Render `message` and you need do nothing else. Render `delta` and you never re-draw text
+you already have, which for a long reply is the difference between a smooth stream and a
+stuttering one — append it when it is there, and replace with `message` when it is not.
+A whole value arrives without a `delta` in two cases: the last event of a message, and
+whatever catches you up after a reconnect.
+
+`accumulateStream: false` hands you the wire payloads untouched, where `message` is the
+new text and `chunk` is `"delta"`. Only worth it if you are appending anyway and want
+nothing between you and the socket.
+
 ## Link
 
 A Link is a live connection to Alfred. It does three things:
