@@ -83,8 +83,8 @@ export type ConversationOptions<V extends APIPath = "v4"> = {
      * is the whole message so far — what it has always been — and `payload.delta` is what
      * the event added, for anyone who would rather append than re-render.
      *
-     * Turn it off to be handed the wire payloads untouched, where a `chunk: "delta"`
-     * payload carries only the new text. Worth it only if you are appending anyway and
+     * Turn it off to be handed the wire payloads untouched, where a piece arrives as
+     * `delta` with no `message` beside it. Worth it only if you are appending anyway and
      * want nothing between you and the socket.
      */
     accumulateStream?: boolean;
@@ -426,15 +426,14 @@ export class Conversation<V extends APIPath = "v4"> {
                     return;
                 }
 
-                const response = chunk.data.response as { type: string; payload?: { message?: string; delta?: string; chunk?: "delta"; participantId?: string } };
+                const response = chunk.data.response as { type: string; payload?: { message?: string; delta?: string; participantId?: string } };
                 const metadata = (chunk.data.response as { metadata?: { participantId?: string } }).metadata;
 
                 // Alfred's own notices are not part of the reply, so they are collected but
-                // not concatenated into it. Appending a delta and replacing on a whole value
-                // is right whether or not the caller left accumulation on.
+                // not concatenated into it. Appending the piece and replacing on a whole
+                // value is right whether or not the caller left accumulation on.
                 if (response.type === "message" && metadata?.participantId !== "system") {
-                    if (response.payload?.delta !== undefined) text += response.payload.delta;
-                    else if (response.payload?.chunk === "delta") text += response.payload.message ?? "";
+                    if (typeof response.payload?.delta === "string") text += response.payload.delta;
                     else if (response.payload?.message) text = response.payload.message;
                 }
 

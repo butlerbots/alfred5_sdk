@@ -140,11 +140,11 @@ export type ResponseMetadata = {
 
 export type MessagePayload = {
     /**
-     * The message content.
+     * The message content, whole: everything written so far.
      *
-     * Always the whole message so far, however it arrived: the SDK rebuilds it from the
-     * deltas the server streams. Turn that off with `accumulateStream: false` and this is
-     * the raw wire value instead — an append when `chunk` is `"delta"`.
+     * The server streams a message a piece at a time; this is the SDK putting it back
+     * together, so it reads the same as it always has. With `accumulateStream: false` you
+     * get the wire payloads instead, where a piece arrives as `delta` and this is absent.
      */
     message: string;
     /** The UUID of this message */
@@ -154,22 +154,15 @@ export type MessagePayload = {
     /**
      * What this event added to the message, when it added anything.
      *
-     * Present on streamed chunks, absent on whole values — the final event of a message,
-     * and anything replayed after a reconnect. Append it if it is there and replace with
-     * `message` if it is not, and you never re-render text you already have.
+     * Append this instead of re-rendering `message` and you never redraw text you already
+     * have. Absent when the whole value arrived at once — the last event of a message, and
+     * whatever catches you up after a reconnect — which replaces rather than extends.
      */
     delta?: string;
-    /**
-     * Set to `"delta"` when `message` is an append rather than the whole value.
-     *
-     * Only ever seen with `accumulateStream: false`; the SDK strips it once it has
-     * rebuilt the message.
-     */
-    chunk?: "delta";
 };
 
 export type ReasoningPayload = {
-    /** The reasoning content. Whole value, rebuilt from deltas — see {@link MessagePayload.message}. */
+    /** The reasoning content, whole. See {@link MessagePayload.message}. */
     reasoning: string;
     /** The UUID of this reasoning */
     reasoningId: string;
@@ -177,8 +170,6 @@ export type ReasoningPayload = {
     completed: boolean;
     /** What this event added. See {@link MessagePayload.delta}. */
     delta?: string;
-    /** Set when `reasoning` is an append rather than the whole value. */
-    chunk?: "delta";
 };
 
 export type FilePayload = {

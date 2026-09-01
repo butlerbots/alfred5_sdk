@@ -41,9 +41,15 @@ const { text } = await convo.ask("Hey there Alfred!");
 
 ### Streaming
 
-Alfred streams a reply as it writes it. Each event carries only the text it added, and the
-SDK puts the message back together for you, so `payload.message` is always the whole
-message so far:
+Alfred streams a reply as it writes it. Each event carries either the whole message so far
+or just the piece it added, never both:
+
+```jsonc
+{ "messageId": "m1", "message": "Good day to you", "completed": false }  // whole: replace
+{ "messageId": "m1", "delta": " to you", "completed": false }            // added: append
+```
+
+The SDK puts them back together, so `payload.message` is always the whole message:
 
 ```typescript
 convo.send("Tell me a story", (res) => {
@@ -58,11 +64,12 @@ convo.send("Tell me a story", (res) => {
 Render `message` and you need do nothing else. Render `delta` and you never re-draw text
 you already have, which for a long reply is the difference between a smooth stream and a
 stuttering one — append it when it is there, and replace with `message` when it is not.
-A whole value arrives without a `delta` in two cases: the last event of a message, and
-whatever catches you up after a reconnect.
+`delta` is absent in two cases: the last event of a message, and whatever catches you up
+after a reconnect. Do not read `completed` to tell the two apart — a whole message arrives
+with `completed: false` whenever you are being caught up mid-answer.
 
-`accumulateStream: false` hands you the wire payloads untouched, where `message` is the
-new text and `chunk` is `"delta"`. Only worth it if you are appending anyway and want
+`accumulateStream: false` hands you the wire payloads untouched, where a piece arrives as
+`delta` with no `message` beside it. Only worth it if you are appending anyway and want
 nothing between you and the socket.
 
 ## Link

@@ -13,7 +13,7 @@ import { Conversation } from "../modules/conversation";
 type Payload = {
     success: boolean;
     data: {
-        response?: { type: string; payload?: { message?: string; messageId?: string; reasoning?: string; delta?: string; chunk?: string; completed?: boolean } };
+        response?: { type: string; payload?: { message?: string; messageId?: string; reasoning?: string; delta?: string; completed?: boolean } };
         convoId?: string;
         quitStream?: boolean;
     };
@@ -33,13 +33,13 @@ function sseServer(events: unknown[]) {
     return { server, url: `http://localhost:${server.port}` };
 }
 
-/** A chunk as the server now streams one: only what it added. */
+/** A chunk as the server now streams one: only what it added, under its own field. */
 const delta = (text: string, messageId = "m1") => ({
     success: true,
     data: {
         response: {
             type: "message",
-            payload: { message: text, messageId, completed: false, chunk: "delta" },
+            payload: { delta: text, messageId, completed: false },
             metadata: { participantId: "alfred" },
         },
         convoId: "convo-1",
@@ -64,7 +64,7 @@ const reasoningDelta = (text: string) => ({
     data: {
         response: {
             type: "reasoning",
-            payload: { reasoning: text, reasoningId: "t1", completed: false, chunk: "delta" },
+            payload: { delta: text, reasoningId: "t1", completed: false },
             metadata: { participantId: "alfred" },
         },
         convoId: "convo-1",
@@ -128,9 +128,9 @@ describe("Streamed messages", () => {
         expect(messages(received).map(payload => payload.delta)).toEqual(["Bond", ", James", undefined]);
     });
 
-    it("leaves no marker behind once a message is rebuilt", async () => {
+    it("fills in the message a delta belongs to, keeping the delta itself", async () => {
         const received = await collect([delta("Bond"), completion()]);
-        expect(messages(received)[0].chunk).toBeUndefined();
+        expect(messages(received)[0]).toMatchObject({ message: "Bond", delta: "Bond", messageId: "m1" });
     });
 
     it("replaces rather than appends when a whole value arrives", async () => {
@@ -161,8 +161,8 @@ describe("Streamed messages", () => {
         const received = await collect([delta("Bond"), delta(", James"), completion()], { accumulateStream: false });
 
         expect(messages(received)).toEqual([
-            { message: "Bond", messageId: "m1", completed: false, chunk: "delta" },
-            { message: ", James", messageId: "m1", completed: false, chunk: "delta" },
+            { delta: "Bond", messageId: "m1", completed: false },
+            { delta: ", James", messageId: "m1", completed: false },
         ]);
     });
 

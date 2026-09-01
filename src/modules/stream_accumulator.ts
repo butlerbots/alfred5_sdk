@@ -4,28 +4,30 @@
  *
  * The server streams text a piece at a time.
  *
- * It used to send the whole answer again on every token, which is O(N²) bytes for an
+ * It used to send the whole message again on every token, which is O(N²) bytes for an
  * N-token reply — slow everywhere, and fatal on a Link websocket, where the answer queues
- * ahead of the connection's own heartbeat until the client gives up on it. Now each event
- * carries only what it added, marked `chunk: "delta"`.
+ * ahead of the connection's own heartbeat until this SDK closes it mid-sentence. A
+ * streamed value now arrives as one of two shapes, and never both:
+ *
+ *     { messageId, message: "Good day to you", completed }   // the whole value: replace
+ *     { messageId, delta: " to you", completed: false }      // what was added: append
  *
  * Callers should not have to care. This puts the message back together, so
- * `payload.message` is the whole message so far exactly as it always was, and adds
+ * `payload.message` is the whole message so far exactly as it always was, and keeps
  * `payload.delta` for anyone who would rather append than re-render.
  *
- * Values still arrive whole in two cases — the last event of a message, and anything
- * replayed after a reconnect — and those replace what came before rather than extending
- * it. That is what makes a reconnect cheap and a dropped delta harmless, and it is handled
- * here so no caller has to know about it.
+ * Whole values arrive for the last event of a message and for anything replaying after a
+ * reconnect, and they replace rather than extend. That is what makes a reconnect cheap and
+ * a dropped delta harmless, and it is handled here so no caller has to know about it.
  */
 
+/** What a streamed value looks like on the wire: one of the two shapes, plus its id. */
 type StreamedPayload = {
     messageId?: string;
     reasoningId?: string;
     message?: string;
     reasoning?: string;
     delta?: string;
-    chunk?: "delta";
     completed?: boolean;
 };
 
@@ -40,7 +42,7 @@ const STREAMED_FIELDS = {
 } as const;
 
 /**
- * Rebuilds whole values from a stream of deltas.
+ * Rebuilds whole values from a stream of pieces.
  *
  * Stateful, and one per stream: it holds the text of every message the stream is still
  * writing, so a turn and a progress stream never see each other's.
@@ -55,17 +57,22 @@ export function createStreamAccumulator(): (payload: unknown) => unknown {
         if (!event?.payload || !fields) return payload;
 
         const id = event.payload[fields.id];
-        const text = event.payload[fields.text];
-        if (typeof id !== "string" || typeof text !== "string") return payload;
+        if (typeof id !== "string") return payload;
 
-        const { chunk, ...rest } = event.payload;
-        const isDelta = chunk === "delta";
-        const whole = isDelta ? (values.get(id) ?? "") + text : text;
+        // Which field is there is the whole discriminant — never `completed`, which says
+        // nothing about the shape: a whole value arrives incomplete whenever this client is
+        // being caught up in the middle of a message.
+        const { delta } = event.payload;
+        const whole = event.payload[fields.text];
+
+        if (typeof delta !== "string" && typeof whole !== "string") return payload;
+
+        const text = typeof delta === "string" ? (values.get(id) ?? "") + delta : whole as string;
 
         // A finished value is the last anyone will hear of that id. Holding it would only
         // leak, and ids are reused across the steps of a turn.
         if (event.payload.completed) values.delete(id);
-        else values.set(id, whole);
+        else values.set(id, text);
 
         return {
             ...response,
@@ -74,11 +81,11 @@ export function createStreamAccumulator(): (payload: unknown) => unknown {
                 response: {
                     ...event,
                     payload: {
-                        ...rest,
-                        [fields.text]: whole,
-                        // Only when this event actually added something: absent means "replace",
-                        // which is what a replayed snapshot is.
-                        ...(isDelta ? { delta: text } : {}),
+                        ...event.payload,
+                        [fields.text]: text,
+                        // Kept as it came: present means this event appended, absent means it
+                        // replaced. Callers rendering incrementally read exactly this.
+                        ...(typeof delta === "string" ? { delta } : {}),
                     },
                 },
             },
