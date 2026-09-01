@@ -34,8 +34,23 @@ export type TransportHandlers = {
     convoId(convoId: string): void;
 };
 
+/** A request to watch a turn that is already running in a conversation. */
+export type TransportAttachRequest = {
+    chatId: string;
+    /** Resume point: only what came after this event is replayed. */
+    afterEventId?: string;
+};
+
 export interface ConversationTransport {
     send(request: TransportTurnRequest, handlers: TransportHandlers): ConversationStream;
+
+    /**
+     * Watches a turn that is already running, without starting one.
+     *
+     * Optional: a transport that cannot follow someone else's turn simply does not
+     * implement it, and the conversation falls back to the HTTP progress stream.
+     */
+    attach?(request: TransportAttachRequest, handlers: TransportHandlers): ConversationStream;
 }
 
 // =============================================

@@ -210,13 +210,27 @@ Which to use:
   Best when you are already running a link for tools or hooks, or holding many
   conversations at once — one socket carries them all.
 
-Two differences to know about:
+One difference to know about: sessions are ephemeral. If the connection drops mid-turn
+the SDK reopens the session and resends transparently; the conversation itself is
+persisted server-side, so nothing is lost.
 
-- Sessions are ephemeral. If the connection drops mid-turn the SDK reopens the session
-  and resends transparently; the conversation itself is persisted server-side, so
-  nothing is lost.
-- The HTTP transport replays your own message back to you (it exists so a browser
-  reconnecting mid-turn sees it). A Link does not, since it has nothing to replay.
+### Rejoining a turn already in progress
+
+A turn belongs to the conversation, not to whoever started it, so reopening a
+conversation mid-answer picks the reply back up as it is written:
+
+```typescript
+const convo = client.createConversation({ convoId, transport: link });
+const watching = convo.fetchProgressStream(chunk => render(chunk));
+// ...later
+watching.close();       // stop watching; the turn keeps running
+```
+
+Over a Link this rides the connection you already hold; over SSE it opens the HTTP
+progress stream. The payloads are identical either way, including your own message and
+the conversation's start — everything a client that arrived late needs to draw the turn
+from the beginning. Pass `{ afterEventId }` to be sent only what you have not already
+seen. A conversation with nothing running simply ends the stream.
 
 Neither transport can cancel a turn: `close()` stops delivery locally, and the reply is
 still generated and stored.
