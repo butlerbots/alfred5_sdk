@@ -59,7 +59,11 @@ export type LinkOptions = {
     reconnect?: boolean;
     minReconnectDelayMs?: number;
     maxReconnectDelayMs?: number;
-    /** Keeps idle connections alive through proxies. 0 disables. Default 30s. */
+    /**
+     * How long the connection may be silent before it is pinged, which both proves it is
+     * alive and keeps proxies from dropping it. A connection that is receiving frames is
+     * never pinged. 0 disables. Default 30s.
+     */
     heartbeatMs?: number;
     /** How long to wait for an acknowledgement. Turns are never timed out here. */
     requestTimeoutMs?: number;
@@ -144,7 +148,14 @@ export class Link {
     private readonly openWaiters: Waiter[] = [];
     private reconnectAttempt = 0;
     private reconnectAfterMs = 0;
-    private heartbeat?: ReturnType<typeof setInterval>;
+    private heartbeat?: ReturnType<typeof setTimeout>;
+    /**
+     * When the server last said anything at all.
+     *
+     * Any frame is proof the connection is alive, so a link that is busy carrying a turn
+     * never needs to ask.
+     */
+    private lastInboundAt = 0;
     private closedByUs = false;
 
     constructor(options: LinkOptions) {
@@ -498,47 +509,91 @@ export class Link {
     }
 
     /**
-     * Pings on an interval and, the important half, notices when a ping goes unanswered.
+     * Pings a SILENT connection and, the important half, notices when a ping goes unanswered.
      *
      * A websocket can die without a close frame — a dropped route, a proxy that forgets
      * the connection, a suspended machine — leaving both ends convinced they are
      * connected while every frame sent into it vanishes. An unanswered ping is the only
      * evidence this end will ever get, so it is treated as a dead connection and
      * reconnected rather than swallowed.
+     *
+     * It only asks when nothing has arrived for a whole interval, because a connection
+     * that is delivering frames has already answered the question. Pinging regardless
+     * meant a busy link had to complete a round trip while the socket was carrying a
+     * streaming turn: the reply queues behind everything already in flight, and a turn
+     * big enough to take longer than the timeout to drain got its own connection torn
+     * down with `4000 heartbeat timeout` — always mid-response, always on the longest
+     * answers, which are the ones a user least wants to lose.
      */
     private startHeartbeat(generation: number): void {
         if (!this.options.heartbeatMs) return;
         this.stopHeartbeat();
 
-        this.heartbeat = setInterval(() => {
+        this.markInbound();
+        this.scheduleHeartbeat(generation);
+    }
+
+    /** Wakes when the connection will have been silent for a full interval, not before. */
+    private scheduleHeartbeat(generation: number): void {
+        if (generation !== this.generation || !this.options.heartbeatMs) return;
+
+        const silentFor = Date.now() - this.lastInboundAt;
+        const due = Math.max(this.options.heartbeatMs - silentFor, 0);
+
+        this.heartbeat = setTimeout(() => {
             if (generation !== this.generation) return;
 
-            // The reply is consumed by the exchange, so it never reaches log listeners.
-            this.exchange("ping", {}, {
-                awaitReady: false,
-                isDone: (frame) => frame.type === "log",
-                timeoutMs: this.heartbeatTimeoutMs(),
-            }).catch(() => {
-                if (generation !== this.generation) return;
-                this.debug("heartbeat went unanswered, treating the connection as dead");
-                this.dropSocket(generation, 4000, "heartbeat timeout");
-            });
-        }, this.options.heartbeatMs);
+            // Something arrived while this was pending: the connection is demonstrably
+            // alive and there is nothing to ask. Wait out the rest of its silence instead.
+            if (Date.now() - this.lastInboundAt < this.options.heartbeatMs) {
+                return this.scheduleHeartbeat(generation);
+            }
+
+            this.ping(generation);
+        }, due);
 
         unref(this.heartbeat);
     }
 
-    /**
-     * Never longer than the interval itself: a second ping in flight tells us nothing new.
-     *
-     * Floored so that a very short interval cannot declare a merely busy connection dead.
-     */
+    /** One liveness round trip. Only ever sent to a connection that has gone quiet. */
+    private ping(generation: number): void {
+        const sentAt = Date.now();
+
+        // The reply is consumed by the exchange, so it never reaches log listeners.
+        this.exchange("ping", {}, {
+            awaitReady: false,
+            isDone: (frame) => frame.type === "log",
+            timeoutMs: this.heartbeatTimeoutMs(),
+        }).then(() => {
+            this.scheduleHeartbeat(generation);
+        }, () => {
+            if (generation !== this.generation) return;
+
+            // The pong is late but other frames are flowing, so the socket is fine and only
+            // this reply is stuck behind them. Killing it here would throw away a working
+            // connection — and whatever it was busy delivering.
+            if (this.lastInboundAt > sentAt) {
+                this.debug("heartbeat was slow but the connection is delivering frames, keeping it");
+                return this.scheduleHeartbeat(generation);
+            }
+
+            this.debug("heartbeat went unanswered, treating the connection as dead");
+            this.dropSocket(generation, 4000, "heartbeat timeout");
+        });
+    }
+
+    /** Never longer than the interval itself: a second ping in flight tells us nothing new. */
     private heartbeatTimeoutMs(): number {
         return Math.max(250, Math.min(this.options.requestTimeoutMs, this.options.heartbeatMs));
     }
 
+    /** Any frame from the server, of any kind, is proof the connection still works. */
+    private markInbound(): void {
+        this.lastInboundAt = Date.now();
+    }
+
     private stopHeartbeat(): void {
-        if (this.heartbeat) clearInterval(this.heartbeat);
+        if (this.heartbeat) clearTimeout(this.heartbeat);
         this.heartbeat = undefined;
     }
 
@@ -748,6 +803,8 @@ export class Link {
     }
 
     private onMessage(raw: string): void {
+        this.markInbound();
+
         let frame: LinkServerFrame;
         try {
             frame = JSON.parse(raw) as LinkServerFrame;

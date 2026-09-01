@@ -503,6 +503,50 @@ describe("Link stability", () => {
         expect(link.state).toBe("closed");
     });
 
+    it("does not ping a connection that is busy delivering frames", async () => {
+        // The heartbeat shares its socket with whatever the link is carrying, so on a streaming
+        // turn its reply queues behind every frame already in flight. A turn big enough to take
+        // longer than the timeout to drain used to have its own connection killed mid-response.
+        // Frames arriving are the answer the ping was going to ask for, so it is not asked.
+        const { link, connect } = setup({ reconnect: true, heartbeatMs: 10, requestTimeoutMs: 10 });
+        const socket = await connect();
+
+        for (let tick = 0; tick < 12; tick++) {
+            socket.push("log", { log: `chunk ${tick}` });
+            await new Promise(resolve => setTimeout(resolve, 5));
+        }
+
+        expect(socket.ofType("ping")).toHaveLength(0);
+        expect(socket.closed).toBeUndefined();
+        expect(link.state).toBe("open");
+
+        // And once it does fall silent, the ping comes back: this is still what keeps an idle
+        // connection alive through a proxy.
+        await new Promise(resolve => setTimeout(resolve, 20));
+        expect(socket.ofType("ping").length).toBeGreaterThan(0);
+    });
+
+    it("keeps a connection whose pong is late but which is still delivering frames", async () => {
+        // A pong can miss its deadline on a connection that is plainly alive, because it is
+        // stuck behind a burst of traffic. The socket is fine; only the reply is slow.
+        const { link, connect, sockets } = setup({ reconnect: true, heartbeatMs: 10, requestTimeoutMs: 10 });
+        const socket = await connect();
+
+        // Silence long enough to be asked, and then traffic that never answers the ping itself.
+        await new Promise(resolve => setTimeout(resolve, 15));
+        expect(socket.ofType("ping")).toHaveLength(1);
+
+        // Long enough to outlast the ping's own deadline, which is floored at 250ms.
+        for (let tick = 0; tick < 16; tick++) {
+            socket.push("log", { log: `chunk ${tick}` });
+            await new Promise(resolve => setTimeout(resolve, 25));
+        }
+
+        expect(socket.closed).toBeUndefined();
+        expect(sockets).toHaveLength(1);
+        expect(link.state).toBe("open");
+    });
+
     it("treats an unanswered heartbeat as a dead connection", async () => {
         // The failure this catches has no close event at all: a route disappears, or a proxy
         // forgets the connection, and both ends go on believing they are connected while every
