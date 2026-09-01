@@ -311,3 +311,98 @@ describe("Conversation.ask", () => {
         await expect(asking).rejects.toThrow("You've reached your daily usage limit.");
     });
 });
+
+// =============================================
+// WATCHING A TURN SOMEONE ELSE STARTED
+// =============================================
+
+describe("Watching a running turn over a link", () => {
+    it("follows the turn over the link instead of opening an SSE stream", async () => {
+        // Reopening a conversation mid-answer is watching a turn, not starting one. It used
+        // to always drop to SSE, so a client that had chosen the websocket transport ended up
+        // with a second, differently-behaved connection for exactly the moments that matter.
+        const { socket, convo } = await linkedConversation({ convoId: "convo-1" });
+
+        const received: Payload[] = [];
+        convo.fetchProgressStream((chunk) => received.push(chunk as Payload));
+        await flush();
+
+        const attach = socket.ofType("conversation.attach").at(-1);
+        expect(attach?.payload).toMatchObject({ chatId: "convo-1" });
+        // Nothing was started: watching is not speaking.
+        expect(socket.ofType("conversation.start")).toHaveLength(0);
+        expect(socket.ofType("conversation.chat")).toHaveLength(0);
+
+        socket.push("conversation.event", { chatId: "convo-1", eventId: "2", event: messageEvent("Half a") }, attach!.id);
+        socket.push("conversation.event", { chatId: "convo-1", eventId: "3", event: messageEvent("Half a cup", true) }, attach!.id);
+        socket.push("conversation.event", { chatId: "convo-1", eventId: "4", event: completionEvent() }, attach!.id);
+        socket.push("conversation.done", { chatId: "convo-1", ok: true }, attach!.id);
+        await flush();
+
+        // The same envelope a turn of its own produces, so a caller renders progress
+        // through the code path it already has.
+        expect(received.map(entry => entry.data.response?.type)).toEqual(["message", "message", "response_status"]);
+        expect(received.every(entry => entry.data.convoId === "convo-1")).toBe(true);
+        expect(received.at(-1)!.data.quitStream).toBe(true);
+    });
+
+    it("asks only for what it does not already have", async () => {
+        const { socket, convo } = await linkedConversation({ convoId: "convo-1" });
+
+        convo.fetchProgressStream(() => undefined, { afterEventId: "7" });
+        await flush();
+
+        expect(socket.ofType("conversation.attach").at(-1)!.payload).toMatchObject({ chatId: "convo-1", afterEventId: "7" });
+    });
+
+    it("ends quietly when nothing is running", async () => {
+        // An idle conversation is the ordinary answer here, not a failure to report to a user.
+        const { socket, convo } = await linkedConversation({ convoId: "convo-1" });
+
+        const received: Payload[] = [];
+        convo.fetchProgressStream((chunk) => received.push(chunk as Payload));
+        await flush();
+
+        const attach = socket.ofType("conversation.attach").at(-1)!;
+        socket.push("conversation.done", { chatId: "convo-1", ok: false, code: "no_active_turn", error: "Nothing is running." }, attach.id);
+        await flush();
+
+        expect(received).toEqual([]);
+    });
+
+    it("reports a refusal the way every other failure is reported", async () => {
+        const { socket, convo } = await linkedConversation({ convoId: "convo-1" });
+
+        const received: Payload[] = [];
+        convo.fetchProgressStream((chunk) => received.push(chunk as Payload));
+        await flush();
+
+        const attach = socket.ofType("conversation.attach").at(-1)!;
+        socket.push("conversation.done", {
+            chatId: "convo-1", ok: false, code: "forbidden_scope", error: "That conversation is not yours.",
+        }, attach.id);
+        await flush();
+
+        expect(received).toHaveLength(1);
+        expect(received[0]).toMatchObject({ success: false, data: { code: "forbidden_scope" } });
+    });
+
+    it("tells the server when it stops watching", async () => {
+        // The turn keeps running server-side; this connection just stops hearing it.
+        const { socket, convo } = await linkedConversation({ convoId: "convo-1" });
+
+        const received: Payload[] = [];
+        const stream = convo.fetchProgressStream((chunk) => received.push(chunk as Payload));
+        await flush();
+
+        const attach = socket.ofType("conversation.attach").at(-1)!;
+        stream.close();
+        await flush();
+
+        expect(socket.ofType("conversation.detach").at(-1)!.payload).toMatchObject({ chatId: "convo-1" });
+
+        socket.push("conversation.event", { chatId: "convo-1", eventId: "9", event: messageEvent("kept going") }, attach.id);
+        await flush();
+        expect(received).toEqual([]);
+    });
+});

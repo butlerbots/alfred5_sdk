@@ -298,9 +298,29 @@ export class Conversation<V extends APIPath = "v4"> {
         return data;
     }
 
-    /** Fetches the conversation progress stream from the server */
-    fetchProgressStream(cb: (chunk: RequestResponseByVersion[V]) => any) {
+    /**
+     * Follows the turn currently running in this conversation.
+     *
+     * Reopening a conversation mid-answer is watching a turn, not starting one, and a
+     * turn belongs to the conversation rather than to whoever started it. When the
+     * conversation is carried over a websocket Link this rides that same connection;
+     * otherwise it opens the HTTP progress stream. Either way the payloads are the same.
+     *
+     * `afterEventId` resumes from what the caller already has, so a client that reloads
+     * is sent what it missed rather than the turn from the beginning.
+     */
+    fetchProgressStream(cb: (chunk: RequestResponseByVersion[V]) => any, options?: { afterEventId?: string }) {
         if (!this.convoId) throw new Error("Conversation ID is not set");
+
+        if (this.transport.attach) {
+            return this.transport.attach({
+                chatId: this.convoId,
+                ...(options?.afterEventId ? { afterEventId: options.afterEventId } : {}),
+            }, {
+                payload: (payload) => cb(payload as RequestResponseByVersion[V]),
+                convoId: () => { /* Already known: this stream is for a conversation that exists. */ },
+            });
+        }
 
         const url = formatURL(this.endpoints.progressStream, { chatId: this.convoId }, { apiKey: this.apiKey, debug: this.debug });
         return streamSSE(url, { debug: this.debug, onPayload: (payload) => cb(payload as RequestResponseByVersion[V]) });

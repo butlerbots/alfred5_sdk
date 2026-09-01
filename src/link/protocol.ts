@@ -88,6 +88,16 @@ export type LinkClientPayloads = {
         personality?: string;
     };
     "conversation.end": { sessionId: string };
+    /**
+     * Watches a turn that is already running, without starting one.
+     *
+     * A turn belongs to the conversation, not to the socket that asked for it, so a
+     * client that reloads or opens the conversation elsewhere can pick the answer back
+     * up as it is written. `afterEventId` resumes from what the client already has.
+     */
+    "conversation.attach": { chatId: string; afterEventId?: string };
+    /** Stops watching. The turn itself keeps running. */
+    "conversation.detach": { chatId: string };
 };
 
 export type LinkClientFrameType = keyof LinkClientPayloads;
@@ -130,7 +140,7 @@ export type LinkServerPayloads = {
     };
     "tool.cancel": { callId: string; reason: string };
     "conversation.open": { sessionId: string; chatId?: string };
-    "conversation.event": { chatId?: string; event: ConversationEvent };
+    "conversation.event": { chatId?: string; eventId?: string; event: ConversationEvent };
     "conversation.notice": { chatId?: string; message: string };
     "conversation.done": { chatId?: string; ok: boolean; code?: string; error?: string; message?: string };
     "goodbye": { reason: string; reconnectAfterMs: number };

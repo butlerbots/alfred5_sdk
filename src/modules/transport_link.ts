@@ -8,6 +8,7 @@ import {
     convoStartedPayload,
     failurePayload,
     noticePayload,
+    TransportAttachRequest,
     TransportHandlers,
     TransportTurnRequest,
 } from "./transport";
@@ -60,6 +61,88 @@ export class LinkConversationTransport implements ConversationTransport {
 
         this.sessionId = undefined;
         await this.link.exchange("conversation.end", { sessionId });
+    }
+
+    /**
+     * Follows a turn that is already running, over the link this conversation already holds.
+     *
+     * A turn belongs to the conversation rather than to the socket that started it, so
+     * reopening a conversation mid-answer — a reload, a second tab, a turn started from
+     * another device or over HTTP — streams here instead of dropping to an SSE connection
+     * just to watch. Needs no session: watching is not speaking.
+     *
+     * A conversation with nothing running ends the stream immediately, which is the
+     * ordinary answer for one that is simply idle.
+     */
+    attach(request: TransportAttachRequest, handlers: TransportHandlers): ConversationStream {
+        let closed = false;
+        const deliver = (payload: unknown) => { if (!closed) handlers.payload(payload); };
+
+        const watching = this.link.exchange("conversation.attach", {
+            chatId: request.chatId,
+            ...(request.afterEventId ? { afterEventId: request.afterEventId } : {}),
+        }, {
+            // A turn takes as long as it takes; only the transport dying ends it early.
+            timeoutMs: 0,
+            isDone: (frame) => frame.type === "conversation.done",
+            onFrame: (frame) => {
+                if (frame.type === "conversation.event") {
+                    const payload = frame.payload;
+                    const event = payload.event as ConversationEvent;
+                    const final = event.type === "response_status" && Boolean(event.payload?.completed);
+
+                    deliver({
+                        success: true,
+                        data: {
+                            response: event,
+                            convoId: payload.chatId ?? request.chatId,
+                            ...(final ? { quitStream: true } : {}),
+                        },
+                    });
+                    return;
+                }
+
+                if (frame.type === "conversation.notice") {
+                    deliver(noticePayload(frame.payload.message, frame.payload.chatId ?? request.chatId));
+                }
+            },
+        });
+
+        void watching.then((done) => {
+            const payload = (done as LinkServerFrameOf<"conversation.done">).payload;
+            if (payload.ok) return;
+
+            // Nothing running is not a failure: the caller asked to watch a conversation
+            // that has nothing to watch, and the stream simply ends.
+            if (payload.code === "no_active_turn") return;
+
+            deliver(failurePayload(
+                payload.code ?? "link_error",
+                payload.error ?? "The turn could not be watched.",
+                payload.message ?? payload.error ?? "I'm afraid I couldn't follow that response.",
+                payload.chatId ?? request.chatId,
+            ));
+        }, (error: unknown) => {
+            if (error instanceof LinkError && error.code === "no_active_turn") return;
+
+            deliver(error instanceof LinkError
+                ? failurePayload(error.code, error.message, error.message, request.chatId)
+                : failurePayload("link_error", String(error), "I'm afraid the connection to Alfred failed.", request.chatId));
+        });
+
+        return {
+            close: () => {
+                if (closed) return;
+                closed = true;
+
+                // Best-effort: a socket that has gone has already ended the watch for us.
+                try {
+                    this.link.send("conversation.detach", { chatId: request.chatId });
+                } catch {
+                    // Disconnected. The server drops the attachment with the connection.
+                }
+            },
+        };
     }
 
     private async runTurn(request: TransportTurnRequest, handlers: TransportHandlers, mayRetry: boolean): Promise<void> {
