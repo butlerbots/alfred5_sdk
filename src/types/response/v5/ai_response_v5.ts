@@ -61,21 +61,37 @@ export type BaseResponseMetadata = {
 // =============================================
 
 export type MessagePayload = {
-    /** The message content */
+    /**
+     * The message content, whole: everything written so far.
+     *
+     * The server streams a message a piece at a time; this is the SDK putting it back
+     * together, so it reads the same as it always has. With `accumulateStream: false` you
+     * get the wire payloads instead, where a piece arrives as `delta` and this is absent.
+     */
     message: string;
     /** The UUID of this message */
     messageId: string;
     /** Whether this message chunk is the final one */
     completed: boolean;
+    /**
+     * What this event added to the message, when it added anything.
+     *
+     * Append this instead of re-rendering `message` and you never redraw text you already
+     * have. Absent when the whole value arrived at once — the last event of a message, and
+     * whatever catches you up after a reconnect — which replaces rather than extends.
+     */
+    delta?: string;
 };
 
 export type ReasoningPayload = {
-    /** The reasoning content */
+    /** The reasoning content, whole. See {@link MessagePayload.message}. */
     reasoning: string;
     /** The UUID of this reasoning */
     reasoningId: string;
     /** Whether this reasoning chunk is the final one */
     completed: boolean;
+    /** What this event added. See {@link MessagePayload.delta}. */
+    delta?: string;
 };
 
 export type FilePayload = {
