@@ -503,11 +503,11 @@ describe("Link stability", () => {
         expect(link.state).toBe("closed");
     });
 
-    it("does not ping a connection that is busy delivering frames", async () => {
+    it("does not wait on a ping from a connection that is busy delivering frames", async () => {
         // The heartbeat shares its socket with whatever the link is carrying, so on a streaming
         // turn its reply queues behind every frame already in flight. A turn big enough to take
         // longer than the timeout to drain used to have its own connection killed mid-response.
-        // Frames arriving are the answer the ping was going to ask for, so it is not asked.
+        // Frames arriving are the answer the ping was going to ask for, so it is not awaited.
         const { link, connect } = setup({ reconnect: true, heartbeatMs: 10, requestTimeoutMs: 10 });
         const socket = await connect();
 
@@ -516,7 +516,7 @@ describe("Link stability", () => {
             await new Promise(resolve => setTimeout(resolve, 5));
         }
 
-        expect(socket.ofType("ping")).toHaveLength(0);
+        // Nothing answers them, and that is deliberate: a pulse has no deadline to miss.
         expect(socket.closed).toBeUndefined();
         expect(link.state).toBe("open");
 
@@ -524,6 +524,45 @@ describe("Link stability", () => {
         // connection alive through a proxy.
         await new Promise(resolve => setTimeout(resolve, 20));
         expect(socket.ofType("ping").length).toBeGreaterThan(0);
+    });
+
+    it("keeps sending frames while it is busy, so the server does not read it as abandoned", async () => {
+        // The server closes a connection that has sent it nothing for 100s, because a socket the
+        // client walked away from still answers websocket pings by itself. Skipping the heartbeat
+        // whenever frames were arriving made a link go silent for the whole of a long turn, and
+        // it was closed mid-response with `1001 idle: no frames received` — the same failure as
+        // the 4000 it replaced, from the opposite end.
+        const { link, connect } = setup({ reconnect: true, heartbeatMs: 10, requestTimeoutMs: 10 });
+        const socket = await connect();
+
+        // A turn streaming steadily for many heartbeat intervals.
+        for (let tick = 0; tick < 24; tick++) {
+            socket.push("log", { log: `chunk ${tick}` });
+            await new Promise(resolve => setTimeout(resolve, 5));
+        }
+
+        expect(socket.ofType("ping").length).toBeGreaterThan(0);
+        expect(link.state).toBe("open");
+        expect(socket.closed).toBeUndefined();
+    });
+
+    it("keeps the pong to a keepalive pulse out of the log listeners", async () => {
+        // The pulse is not an exchange, so nothing consumes its reply — without help it would
+        // show up as a "pong" log line in every consumer, once per interval, forever.
+        const { link, connect } = setup({ reconnect: true, heartbeatMs: 10, requestTimeoutMs: 10 });
+        const socket = await connect();
+
+        const logs: string[] = [];
+        link.on("log", (log) => logs.push(log));
+
+        for (let tick = 0; tick < 6; tick++) {
+            socket.push("log", { log: "chunk" });
+            await new Promise(resolve => setTimeout(resolve, 5));
+        }
+
+        for (const ping of socket.ofType("ping")) socket.push("log", { log: "pong" }, ping.id);
+
+        expect(logs).toEqual(["chunk", "chunk", "chunk", "chunk", "chunk", "chunk"]);
     });
 
     it("keeps a connection whose pong is late but which is still delivering frames", async () => {
