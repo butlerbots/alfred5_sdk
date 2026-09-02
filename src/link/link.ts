@@ -156,6 +156,9 @@ export class Link {
      * never needs to ask.
      */
     private lastInboundAt = 0;
+
+    /** Ids of keepalive pulses, so their pongs can be dropped instead of shown as logs. */
+    private pulses = new Set<string>();
     private closedByUs = false;
 
     constructor(options: LinkOptions) {
@@ -524,6 +527,14 @@ export class Link {
      * big enough to take longer than the timeout to drain got its own connection torn
      * down with `4000 heartbeat timeout` — always mid-response, always on the longest
      * answers, which are the ones a user least wants to lose.
+     *
+     * Not asking is not the same as saying nothing, though. The server reaps connections
+     * that have sent it no frames for 100s, because a socket the client walked away from
+     * still answers websocket pings at the network layer and only the client's own frames
+     * prove someone is still there. A link busy receiving a long turn used to go completely
+     * silent for as long as the turn ran and got closed as idle — `1001 idle: no frames
+     * received`, mid-response again. So a busy interval still sends a pulse; it just does
+     * not wait for the reply, which is the half that could not survive a full send queue.
      */
     private startHeartbeat(generation: number): void {
         if (!this.options.heartbeatMs) return;
@@ -544,8 +555,10 @@ export class Link {
             if (generation !== this.generation) return;
 
             // Something arrived while this was pending: the connection is demonstrably
-            // alive and there is nothing to ask. Wait out the rest of its silence instead.
+            // alive and there is nothing to ask. Tell the server we are still here and
+            // wait out the rest of its silence instead.
             if (Date.now() - this.lastInboundAt < this.options.heartbeatMs) {
+                this.pulse();
                 return this.scheduleHeartbeat(generation);
             }
 
@@ -582,6 +595,21 @@ export class Link {
         });
     }
 
+    /**
+     * A ping sent with no deadline and no interest in the answer.
+     *
+     * Its only job is to land on the server so the connection does not look abandoned. A
+     * failure here is not evidence of anything — inbound frames already proved the socket
+     * works — so it stays quiet and lets the real heartbeat make that call.
+     */
+    private pulse(): void {
+        try {
+            this.pulses.add(this.send("ping", {}));
+        } catch {
+            this.debug("could not send the keepalive pulse, leaving it to the next heartbeat");
+        }
+    }
+
     /** Never longer than the interval itself: a second ping in flight tells us nothing new. */
     private heartbeatTimeoutMs(): number {
         return Math.max(250, Math.min(this.options.requestTimeoutMs, this.options.heartbeatMs));
@@ -595,6 +623,9 @@ export class Link {
     private stopHeartbeat(): void {
         if (this.heartbeat) clearTimeout(this.heartbeat);
         this.heartbeat = undefined;
+
+        // Pongs owed by a socket that is going away will never arrive.
+        this.pulses.clear();
     }
 
     // =============================================
@@ -826,6 +857,10 @@ export class Link {
             else waiting.onFrame?.(frame);
             return;
         }
+
+        // The pong to a keepalive pulse. Nothing is waiting for it, and it is not a log
+        // anyone asked to see.
+        if (frame.replyTo && this.pulses.delete(frame.replyTo)) return;
 
         switch (frame.type) {
             case "tool.call":
