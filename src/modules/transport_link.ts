@@ -8,9 +8,13 @@ import {
     convoStartedPayload,
     failurePayload,
     noticePayload,
+    SteerResult,
     TransportAttachRequest,
     TransportHandlers,
+    TransportSteerRequest,
+    TransportStopRequest,
     TransportTurnRequest,
+    TurnStopped,
 } from "./transport";
 
 export type LinkSessionConfig = {
@@ -52,6 +56,50 @@ export class LinkConversationTransport implements ConversationTransport {
         });
 
         return { close: () => { closed = true; } };
+    }
+
+    /**
+     * Stops a running turn.
+     *
+     * Addressed by conversation rather than by session, so a client that reconnected — losing
+     * its session but not the turn — can still stop what it is watching. The turn's own stream
+     * ends normally afterwards, carrying whatever the model produced before the stop.
+     */
+    async stop(request: TransportStopRequest): Promise<TurnStopped | undefined> {
+        try {
+            const frame = await this.link.exchange("conversation.stop", request, {
+                isDone: (reply) => reply.type === "conversation.stopped" || reply.type === "ack" || reply.type === "error",
+            });
+
+            if (frame.type !== "conversation.stopped") return undefined;
+
+            const { mode, requestedMode, by } = frame.payload;
+            return { mode, requestedMode, by };
+        } catch {
+            // Nothing was running, or the link is gone. Either way there is no turn to stop and
+            // nothing useful for the caller to do about it.
+            return undefined;
+        }
+    }
+
+    /**
+     * Says something to a turn that is still running.
+     *
+     * A refusal is the interesting case: the caller is holding a message the user typed and
+     * has to send it as an ordinary turn instead of dropping it.
+     */
+    async steer(request: TransportSteerRequest): Promise<SteerResult> {
+        try {
+            const frame = await this.link.exchange("conversation.steer", request, {
+                isDone: (reply) => reply.type === "conversation.steered" || reply.type === "ack" || reply.type === "error",
+            });
+
+            if (frame.type === "conversation.steered") return { ok: true };
+            return { ok: false, reason: "no_turn" };
+        } catch (error) {
+            const code = error instanceof LinkError ? error.code : undefined;
+            return { ok: false, reason: code === "too_late" ? "too_late" : "no_turn" };
+        }
     }
 
     /** Ends the session, if one is open. The conversation can still be resumed later. */

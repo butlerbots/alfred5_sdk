@@ -98,6 +98,19 @@ export type LinkClientPayloads = {
     "conversation.attach": { chatId: string; afterEventId?: string };
     /** Stops watching. The turn itself keeps running. */
     "conversation.detach": { chatId: string };
+    /**
+     * Stops a running turn.
+     *
+     * `soft` lets the model call in flight finish and takes no further step; `hard` aborts the
+     * stream where it stands. A hard stop against a provider that cannot be cancelled is
+     * applied as a soft one — the answer says which was applied.
+     */
+    "conversation.stop": { chatId: string; mode: "soft" | "hard" };
+    /**
+     * Says something to a turn that is still running. It reaches the model at its next step
+     * boundary; the turn is not interrupted.
+     */
+    "conversation.steer": { chatId: string; message: string };
 };
 
 export type LinkClientFrameType = keyof LinkClientPayloads;
@@ -143,6 +156,10 @@ export type LinkServerPayloads = {
     "conversation.event": { chatId?: string; eventId?: string; event: ConversationEvent };
     "conversation.notice": { chatId?: string; message: string };
     "conversation.done": { chatId?: string; ok: boolean; code?: string; error?: string; message?: string };
+    /** A turn was stopped. `mode` is what was applied, `requestedMode` what was asked for. */
+    "conversation.stopped": { chatId: string; mode: "soft" | "hard"; requestedMode: "soft" | "hard"; by: "user" | "system" };
+    /** A steered message was accepted and will reach the model at its next step boundary. */
+    "conversation.steered": { chatId: string };
     "goodbye": { reason: string; reconnectAfterMs: number };
     /**
      * The full set this connection should watch, for the sources it has registered.

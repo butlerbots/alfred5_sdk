@@ -15,6 +15,16 @@ export const CONFIG = {
                 v1: { base: "/api/convo/get/history" }
             }
         },
+        interrupt: {
+            v4: {
+                stop: "/api/alfred/v4/chat/stop",
+                steer: "/api/alfred/v4/chat/steer",
+            },
+            v5: {
+                stop: "/api/alfred/v5/chat/stop",
+                steer: "/api/alfred/v5/chat/steer",
+            },
+        },
         progress: {
             v4: {
                 base: "/api/alfred/v4/chat/progress",
