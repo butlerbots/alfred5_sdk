@@ -207,6 +207,16 @@ export type ResponseStatusPayload = {
         /** When the stop was requested. */
         at: number;
     };
+    /**
+     * Messages steered into the turn that never reached the model, in the order they were sent.
+     *
+     * Steering only lands at a step boundary, and a turn does not always have another one: it
+     * stops, it fails, or the model answers without needing a further step. The text is not in
+     * the conversation's history — it was never said to anyone — so it is handed back here and
+     * the client decides what to do with it. Send it as an ordinary message when the turn
+     * merely ended; put it back in front of the user when they are the one who stopped it.
+     */
+    undeliveredSteer?: string[];
     /** Rich response metadata — only present on the final `completed: true` event.
      *  Populated by the caller (e.g. gateway) after the response finishes and usage is available. */
     metadata?: ResponseMetadata;
