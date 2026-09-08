@@ -197,6 +197,16 @@ export type ConvoStatusPayload = {
 
 export type ResponseStatusPayload = {
     completed: boolean;
+    /** Present when the turn was stopped rather than finished on its own.
+     *  `mode` is what was applied and `requestedMode` what was asked for: they differ when a
+     *  hard stop was downgraded because the model's provider ignores a cancelled stream. */
+    stop?: {
+        mode: "soft" | "hard";
+        requestedMode: "soft" | "hard";
+        by: "user" | "system";
+        /** When the stop was requested. */
+        at: number;
+    };
     /** Rich response metadata — only present on the final `completed: true` event.
      *  Populated by the caller (e.g. gateway) after the response finishes and usage is available. */
     metadata?: ResponseMetadata;
