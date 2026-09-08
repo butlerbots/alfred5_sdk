@@ -74,8 +74,15 @@ export class SSEConversationTransport implements ConversationTransport {
         if (!endpoint) return undefined;
 
         const response = await this.post(endpoint, { chatId: request.chatId, mode: request.mode });
+        if (!response) return undefined;
+
         // 404 is "nothing was running", which is the ordinary answer to stopping a moment late.
-        if (!response || response.status === 404) return undefined;
+        // Anything else is the server refusing or failing, and a stop button that quietly does
+        // nothing is the hardest kind of bug to report — so it is said out loud.
+        if (!response.ok) {
+            if (response.status !== 404) console.warn(`[Stop failed: ${response.status}]`, await response.text().catch(() => ""));
+            return undefined;
+        }
 
         const body = await response.json().catch(() => undefined) as { stop?: TurnStopped } | undefined;
         return body?.stop;
@@ -91,7 +98,12 @@ export class SSEConversationTransport implements ConversationTransport {
 
         // 409: the turn is no longer accepting messages. The caller still has something the
         // user typed and must send it as an ordinary turn.
-        return { ok: false, reason: response.status === 409 ? "too_late" : "no_turn" };
+        if (response.status === 409) return { ok: false, reason: "too_late" };
+
+        // Anything other than "no turn" means the message did not land for a reason the caller
+        // cannot see: it still falls back to sending, but not in silence.
+        if (response.status !== 404) console.warn(`[Steer failed: ${response.status}]`, await response.text().catch(() => ""));
+        return { ok: false, reason: "no_turn" };
     }
 
     private async post(endpoint: string, body: Record<string, unknown>) {
@@ -105,8 +117,10 @@ export class SSEConversationTransport implements ConversationTransport {
             });
         } catch (error) {
             // A stop that cannot reach the server is not worth throwing over: the turn is
-            // ending on its own soon enough, and the caller has no better move to make.
-            if (this.config.debug) console.warn(`[Interrupt failed: ${endpoint}]`, error);
+            // ending on its own soon enough, and the caller has no better move to make. It is
+            // still worth saying, and not only in debug — an interruption that vanishes without
+            // a trace is indistinguishable from one the UI forgot to wire up.
+            console.warn(`[Interrupt failed: ${endpoint}]`, error);
             return undefined;
         }
     }
