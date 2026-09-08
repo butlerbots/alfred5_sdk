@@ -2,7 +2,7 @@ import { EventSource } from "eventsource";
 import { CONFIG, APIPath } from "../config";
 import type { Link } from "../link/link";
 import { Emitter } from "../util/emitter";
-import { ConversationStream, ConversationTransport } from "./transport";
+import { ConversationStream, ConversationTransport, SteerResult, TurnStopMode, TurnStopped } from "./transport";
 import { createStreamAccumulator } from "./stream_accumulator";
 import { LinkConversationTransport } from "./transport_link";
 import { SSEConversationTransport, streamSSE } from "./transport_sse";
@@ -109,6 +109,8 @@ export class Conversation<V extends APIPath = "v4"> {
         history: string,
         progressStream: string,
         progress: string,
+        stop: string,
+        steer: string,
     }
 
     constructor(config: ConversationOptions<V>) {
@@ -118,12 +120,15 @@ export class Conversation<V extends APIPath = "v4"> {
         const serverUrl = config.serverUrl || CONFIG.server;
 
         const progressConfig = (CONFIG.paths.progress as Record<string, { base: string; stream: string } | undefined>)[this.chatApiV];
+        const interruptConfig = (CONFIG.paths.interrupt as Record<string, { stop: string; steer: string } | undefined>)[this.chatApiV];
 
         this.endpoints = {
             conversation: serverUrl + (config.convoPath || config.path || CONFIG.paths.conversation[this.chatApiV].base),
             history: serverUrl + (config.historyPath || CONFIG.paths.history.chat.v1.base),
             progressStream: serverUrl + (config.progressStreamPath || (progressConfig?.stream ?? CONFIG.paths.progress.v4.stream)),
             progress: serverUrl + (config.progressPath || (progressConfig?.base ?? CONFIG.paths.progress.v4.base)),
+            stop: serverUrl + (interruptConfig?.stop ?? CONFIG.paths.interrupt.v4.stop),
+            steer: serverUrl + (interruptConfig?.steer ?? CONFIG.paths.interrupt.v4.steer),
         }
 
         this.apiKey = config.apiKey;
@@ -141,6 +146,8 @@ export class Conversation<V extends APIPath = "v4"> {
         } else {
             this.transport = new SSEConversationTransport({
                 endpoint: () => this.endpoints.conversation,
+                stopEndpoint: () => this.endpoints.stop,
+                steerEndpoint: () => this.endpoints.steer,
                 apiKey: this.apiKey,
                 debug: this.debug,
             });
@@ -404,6 +411,44 @@ export class Conversation<V extends APIPath = "v4"> {
                 this.events.emit("convoId", convoId);
             },
         });
+    }
+
+    /**
+     * Stops the turn running in this conversation.
+     *
+     * `soft` (the default) lets the model finish the call it is in the middle of and takes no
+     * further step: the answer so far is kept, in history and in what the model remembers
+     * saying, and it works on every model. `hard` cuts the stream off mid-sentence and aborts
+     * the tools with it — but only actually stops the bill where the provider supports
+     * cancellation, so against one that does not the server applies a soft stop instead. The
+     * returned `mode` says which you got; `undefined` means there was nothing left to stop.
+     *
+     * Either way the turn's stream ends the way it always does, carrying what was produced
+     * before the stop. There is nothing else to clean up.
+     */
+    async stop(mode: TurnStopMode = "soft"): Promise<TurnStopped | undefined> {
+        if (!this.convoId) return undefined;
+        if (!this.transport.stop) return undefined;
+
+        return this.transport.stop({ chatId: this.convoId, mode });
+    }
+
+    /**
+     * Says something to the turn that is already running.
+     *
+     * The message reaches the model at its next step boundary, so nothing in flight is thrown
+     * away and the model reads it as the user talking mid-task — which is usually what someone
+     * typing while Alfred works actually means.
+     *
+     * Check the result. `too_late` means the message was NOT delivered, because the turn was
+     * already stopping or over, and it should be sent with `send()` instead. Dropping it is
+     * the one thing that is never right.
+     */
+    async steer(message: string): Promise<SteerResult> {
+        if (!this.convoId) return { ok: false, reason: "no_turn" };
+        if (!this.transport.steer) return { ok: false, reason: "no_turn" };
+
+        return this.transport.steer({ chatId: this.convoId, message });
     }
 
     /**
