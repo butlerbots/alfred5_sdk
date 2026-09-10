@@ -2,6 +2,8 @@ export { Link } from "./link";
 export type { LinkOptions, LinkEvents, LinkState, ExchangeOptions } from "./link";
 export { Tool } from "./tool";
 export type { AnyTool, ToolConfig, ToolRunContext, ToolCallMeta, ToolStatusReporter, ToolInvocation } from "./tool";
+export { Agent } from "./agent";
+export type { AgentConfig, AgentChatOptions, AgentReply, AgentStatus, AgentRunner } from "./agent";
 export { Hook } from "./hook";
 export type { AnyHook, HookConfig, HookEmitter } from "./hook";
 export { LINK_PROTOCOL_VERSION, LinkError } from "./protocol";
@@ -14,6 +16,7 @@ export type {
     LinkServerFrameType,
     LinkScopeKind,
     LinkToolDescriptor,
+    LinkAgentDescriptor,
     LinkHookDeclaration,
     LinkHookEventDeclaration,
 } from "./protocol";

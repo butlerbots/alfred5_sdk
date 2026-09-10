@@ -99,9 +99,11 @@ export function createLinkHarness(
 
                 const ids = frame.type === "tool.register"
                     ? frame.payload.tools.map(tool => `link:${link.linkId}/${tool.localId}`)
-                    : frame.type === "hook.register"
-                        ? [`link:${link.linkId}/${frame.payload.localId}`]
-                        : undefined;
+                    : frame.type === "agent.register"
+                        ? frame.payload.agents.map(agent => `link:${link.linkId}/${agent.localId}`)
+                        : frame.type === "hook.register"
+                            ? [`link:${link.linkId}/${frame.payload.localId}`]
+                            : undefined;
                 if (!ids) continue;
 
                 answered.add(frame.id);

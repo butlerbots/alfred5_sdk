@@ -1,5 +1,6 @@
 import { CONFIG } from "../config";
 import { Emitter } from "../util/emitter";
+import { Agent, AgentChatOptions, AgentReply, AgentRunner, isAgentResult } from "./agent";
 import { AnyHook } from "./hook";
 import {
     LINK_PROTOCOL_VERSION,
@@ -110,7 +111,7 @@ const DEFAULTS = {
  * re-declared on connect, and ids are derived from your `linkId`, so a reconnect
  * anywhere lands on the same saved settings and subscriptions.
  */
-export class Link {
+export class Link implements AgentRunner {
     private readonly options: Required<Omit<LinkOptions, "socketFactory" | "client" | "serverUrl">> & {
         client: string;
         serverUrl: string;
@@ -119,6 +120,7 @@ export class Link {
 
     private readonly emitter = new Emitter<LinkEvents>();
     private readonly tools = new Map<string, AnyTool>();
+    private readonly agents = new Map<string, Agent>();
     private readonly hooks = new Map<string, AnyHook>();
     private readonly subscriptionStore = new SubscriptionStore();
     private readonly pending = new Map<string, Pending>();
@@ -199,6 +201,29 @@ export class Link {
         return this;
     }
 
+    /**
+     * Adds an agent, with the tools it works with.
+     *
+     * The tools come with the agent — they need no `addTool` of their own, and giving them one
+     * would place them in the chat as well, which is the thing an agent exists to avoid. One
+     * namespace for everything the link declares, so an id used twice is refused here rather
+     * than resolved by whichever registered last.
+     */
+    addAgent(agent: Agent): this {
+        for (const tool of agent.tools) {
+            const holder = this.findTool(tool.id) ? "another tool" : this.agents.has(tool.id) ? "an agent" : undefined;
+            if (holder) throw new Error(`Cannot add agent "${agent.id}": its tool "${tool.id}" shares an id with ${holder} on this link.`);
+        }
+        if (this.tools.has(agent.id) || this.findTool(agent.id)) {
+            throw new Error(`Cannot add agent "${agent.id}": a tool on this link already has that id.`);
+        }
+
+        this.agents.set(agent.id, agent);
+        agent.attach(this);
+        if (this.currentState === "open") void this.registerAgents([agent]);
+        return this;
+    }
+
     /** Adds a hook that can wake the user's background agents. */
     addHook(hook: AnyHook): this {
         this.hooks.set(hook.id, hook);
@@ -213,6 +238,21 @@ export class Link {
 
     getHook(id: string): AnyHook | undefined {
         return this.hooks.get(id);
+    }
+
+    getAgent(id: string): Agent | undefined {
+        return this.agents.get(id);
+    }
+
+    /** A tool by its local id, wherever it lives: on the link itself or behind one of its agents. */
+    private findTool(localId: string): AnyTool | undefined {
+        const own = this.tools.get(localId);
+        if (own) return own;
+        for (const agent of this.agents.values()) {
+            const tool = agent.getTool(localId);
+            if (tool) return tool;
+        }
+        return undefined;
     }
 
     // =============================================
@@ -664,7 +704,45 @@ export class Link {
 
     private async registerAll(): Promise<void> {
         await this.registerTools(Array.from(this.tools.values()));
+        await this.registerAgents(Array.from(this.agents.values()));
         for (const hook of this.hooks.values()) await this.registerHook(hook);
+    }
+
+    private async registerAgents(agents: Agent[]): Promise<void> {
+        if (!agents.length) return;
+
+        const frame = await this.exchange("agent.register", { agents: agents.map(agent => agent.descriptor()) }, { awaitReady: false });
+        const ids = (frame.payload as { ids?: string[] }).ids ?? [];
+
+        agents.forEach((agent, index) => { agent.linkedId = ids[index]; });
+        this.debug(`registered ${agents.length} agent(s)`);
+    }
+
+    /**
+     * Called by `Agent.chat`.
+     *
+     * One exchange, however long the agent takes: status frames go to the caller as they
+     * arrive, and the result frame ends it. Never timed out here — an agent that is calling
+     * tools on this very machine may legitimately take a while.
+     */
+    async chatAgent(agentId: string, message: string, options: AgentChatOptions): Promise<AgentReply> {
+        const frame = await this.exchange("agent.chat", {
+            localId: agentId,
+            message,
+            ...(options.thread ? { thread: options.thread } : {}),
+        }, {
+            timeoutMs: 0,
+            isDone: isAgentResult,
+            onFrame: (update) => {
+                if (update.type === "agent.status") options.onStatus?.({ label: update.payload.label, state: update.payload.state });
+            },
+        });
+
+        if (!isAgentResult(frame)) throw new LinkError("bad_frame", `Expected an agent.result, got "${frame.type}".`);
+
+        const { payload } = frame;
+        if (!payload.ok) throw new LinkError(payload.code, payload.error);
+        return { text: payload.output, thread: payload.thread };
     }
 
     private async registerTools(tools: AnyTool[]): Promise<void> {
@@ -902,7 +980,7 @@ export class Link {
 
     private handleToolCall(frame: LinkServerFrameOf<"tool.call">): void {
         const { callId, localId, args, meta } = frame.payload;
-        const tool = this.tools.get(localId);
+        const tool = this.findTool(localId);
 
         if (!tool) {
             this.send("tool.result", { ok: false, error: `This link has no tool "${localId}".` }, frame.id);
