@@ -1,4 +1,4 @@
-import { ButlerBotClient, Hook, Tool } from "../src";
+import { Agent, ButlerBotClient, Hook, Tool } from "../src";
 import { z } from "zod";
 
 /**
@@ -39,6 +39,21 @@ link.addTool(new Tool({
     },
 }));
 
+// ── An agent of your own, with tools only it can see ──
+// To Alfred this is one tool. The tools behind it never appear in a chat, and the
+// prompt is what tells the agent how they fit together.
+const barista = new Agent({
+    id: "barista",
+    name: "Barista",
+    description: "Runs the kitchen coffee machine: grinding, brewing and cleaning. Hand it anything about coffee.",
+    prompt: "You operate a coffee machine. Always grind before you brew. Report exactly what you made.",
+    tools: [
+        new Tool({ id: "grind", description: "Grind beans for one cup.", run: async () => "Ground 18g." }),
+        new Tool({ id: "clean", description: "Run the cleaning cycle.", run: async () => "Clean." }),
+    ],
+});
+link.addAgent(barista);
+
 // ── A hook that can wake the user's background agents ──
 const waterLow = new Hook({
     id: "water-low",
@@ -54,6 +69,12 @@ async function main() {
 
     // Fires whenever it needs to; agents subscribed to this hook decide what to do.
     await waterLow.emit("low", { level: 0.2 });
+
+    // Or ask your own agent directly. It runs on the server; the answer lands here.
+    const reply = await barista.chat("Clean the machine and tell me when it's done.", {
+        onStatus: (status) => console.log(status.state, status.label),
+    });
+    console.log(reply.text);
 
     // ── A conversation over the same connection ──
     const convo = client.createConversation({ transport: link });

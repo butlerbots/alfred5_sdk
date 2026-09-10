@@ -212,6 +212,45 @@ whatever tier and permission gating it carries, which tools bolted onto the chat
 An unknown platform is rejected when you register, not ignored: a tool reachable from nowhere looks
 exactly like a tool that is broken.
 
+### Agents: your tools behind a worker of your own
+
+When your client has more tools than a chat should see, or tools that only make sense together,
+declare an agent. It lives on the server for as long as the link does, works with tools that run
+here, and to Alfred it is one tool:
+
+```ts
+import { Agent, Tool } from "@butlerbot/sdk";
+
+const grind = new Tool({ id: "grind", description: "Grind beans.", run: async () => grinder.run() });
+const brew = new Tool({ id: "brew", description: "Brew from the ground beans.", run: async () => machine.brew() });
+
+const barista = new Agent({
+    id: "barista",
+    name: "Barista",
+    description: "Runs the kitchen coffee machine: grinding, brewing, cleaning.",
+    prompt: "You operate a coffee machine. Always grind before you brew. Report what you made.",
+    model: "DeepSeek-V4-Flash",
+    tools: [grind, brew],
+});
+link.addAgent(barista);
+```
+
+The tools come with the agent — no `addTool` for them, and Alfred never sees them directly. The
+prompt is where a thousand tools become one coherent worker.
+
+You can talk to the agent yourself. The run happens on the server, on your account; the question
+and the answer live here:
+
+```ts
+const { text } = await barista.chat("Make me a flat white.");
+```
+
+One `Agent` remembers across `chat` calls; pass `{ thread }` to name the conversation yourself, or
+`newThread()` to start over. This is what makes a hook callback useful on its own: something
+happens, your code notices, and you ask an agent what to do about it.
+
+Needs `link.tools.register` to declare agents, and `tools.run` to talk to one directly.
+
 ### Tools belong to the user, not to a conversation
 
 Once a tool is registered, Alfred can call it anywhere that user talks to it — the web

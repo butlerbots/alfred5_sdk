@@ -31,6 +31,23 @@ export type LinkToolDescriptor = {
     timeoutMs?: number;
 };
 
+/**
+ * An agent as declared to the server: a prompt, a model and the tools it works with.
+ *
+ * The tools travel inside the agent because that is what places them: reachable through the
+ * agent only, never from a chat directly.
+ */
+export type LinkAgentDescriptor = {
+    localId: string;
+    name: string;
+    description: string;
+    prompt: string;
+    model?: string;
+    tools: Omit<LinkToolDescriptor, "platforms">[];
+    display?: LinkToolDescriptor["display"];
+    defaultEnabled?: boolean;
+};
+
 export type LinkHookEventDeclaration = {
     name: string;
     description?: string;
@@ -111,6 +128,12 @@ export type LinkClientPayloads = {
      * boundary; the turn is not interrupted.
      */
     "conversation.steer": { chatId: string; message: string };
+    "agent.register": { agents: LinkAgentDescriptor[] };
+    /**
+     * Talks to one of this link's agents directly. `thread` names the exchange the message
+     * continues; the same thread carries the same memory.
+     */
+    "agent.chat": { localId: string; message: string; thread?: string };
 };
 
 export type LinkClientFrameType = keyof LinkClientPayloads;
@@ -161,6 +184,12 @@ export type LinkServerPayloads = {
     /** A steered message was accepted and will reach the model at its next step boundary. */
     "conversation.steered": { chatId: string };
     "goodbye": { reason: string; reconnectAfterMs: number };
+    /** Progress on an `agent.chat`, in the words the agent's status feed would show a conversation. */
+    "agent.status": { localId: string; label: string; state: "running" | "completed" | "failed" };
+    /** The agent's reply, exactly once per `agent.chat`. */
+    "agent.result":
+        | { localId: string; thread: string; ok: true; output: string }
+        | { localId: string; thread?: string; ok: false; code: string; error: string };
     /**
      * The full set this connection should watch, for the sources it has registered.
      *
