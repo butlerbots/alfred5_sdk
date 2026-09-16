@@ -1,4 +1,4 @@
-import { CONFIG, APIPath } from "./config";
+import { CONFIG, APIPath, resolveLinkUrl } from "./config";
 import { Link, LinkOptions } from "./link";
 import { Conversation, ConversationOptions } from "./modules/conversation";
 import { getUsagePolicyData, UsagePolicyDataOptions } from "./modules/usage";
@@ -11,6 +11,14 @@ type OptionalApiKey<T> = Omit<T, "apiKey"> & {
 export type ButlerBotClientOptions = {
     /** The server endpoint, API calls are sent here */
     serverUrl?: string;
+    /**
+     * Where links connect. Defaults to the hosted link service.
+     *
+     * Links are no longer carried by the core server, so this is a second address rather than
+     * a path on the first. A `serverUrl` pointing at your own stack is used for links too,
+     * unless this names somewhere else.
+     */
+    linkUrl?: string;
     /** The API key to use with ButlerBot */
     apiKey: string;
     /** Whether to enable debug logs */
@@ -20,11 +28,13 @@ export type ButlerBotClientOptions = {
 export class ButlerBotClient {
     private apiKey: string;
     private serverUrl: string;
+    private linkUrl: string;
     private debug: boolean;
 
     constructor(config: ButlerBotClientOptions) {
         this.apiKey = config.apiKey;
         this.serverUrl = config.serverUrl || CONFIG.server;
+        this.linkUrl = resolveLinkUrl(config);
         this.debug = config.debug || false;
     }
 
@@ -47,10 +57,13 @@ export class ButlerBotClient {
 
     /**
      * Creates a Link: a live connection that can register tools and hooks, and carry
-     * conversations. Inherits the client's API key and server URL.
+     * conversations. Inherits the client's API key and link URL.
+     *
+     * The link URL, not the server URL: links are served by their own service. Pass
+     * `serverUrl` here, or `linkUrl` to the client, to point somewhere else.
      */
     createLink(config: OptionalApiKey<LinkOptions>): Link {
-        return new Link({ debug: this.debug, apiKey: this.apiKey, serverUrl: this.serverUrl, ...config } as LinkOptions);
+        return new Link({ debug: this.debug, apiKey: this.apiKey, serverUrl: this.linkUrl, ...config } as LinkOptions);
     }
 
     /** Get current usage policy data */
@@ -62,7 +75,8 @@ export class ButlerBotClient {
 // Expose types from subsequent modules
 export * from "./types/type_registry";
 export * from "./link";
-export { Conversation, ConversationOptions };
+export { Conversation };
+export type { ConversationOptions };
 export type { APIPath };
 export type {
     ConversationStream,

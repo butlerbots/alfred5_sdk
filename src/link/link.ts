@@ -52,6 +52,7 @@ export type LinkOptions = {
      * one takes over and the older one's registrations are released.
      */
     linkId: string;
+    /** The link service. Defaults to the hosted one, which is not the core server. */
     serverUrl?: string;
     /** Informational, shown in server logs. Defaults to the SDK name. */
     client?: string;
@@ -169,7 +170,7 @@ export class Link implements AgentRunner {
             reconnect: true,
             debug: false,
             client: "@butlerbot/sdk",
-            serverUrl: CONFIG.server,
+            serverUrl: CONFIG.link,
             socketFactory: defaultSocketFactory,
             ...stripUndefined(options),
         } as Link["options"];

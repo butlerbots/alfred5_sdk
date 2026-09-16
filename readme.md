@@ -78,7 +78,12 @@ between you and the socket.
 
 ## Link
 
-A Link is a live connection to Alfred. It does three things:
+A Link is a live connection to Alfred, served by its own endpoint — `link.butler.now`,
+not the core API server. `createLink` goes there by default; pass `linkUrl` to the client
+(or `serverUrl` to `createLink`) to point somewhere else. A client given a `serverUrl` of
+its own — a self-hosted stack — uses that for links too.
+
+It does three things:
 
 - **Tools** — Alfred calls code that runs on your machine
 - **Hooks** — your code wakes the user's background agents when something happens
@@ -286,9 +291,15 @@ Which to use:
   Best when you are already running a link for tools or hooks, or holding many
   conversations at once — one socket carries them all.
 
-One difference to know about: sessions are ephemeral. If the connection drops mid-turn
-the SDK reopens the session and resends transparently; the conversation itself is
-persisted server-side, so nothing is lost.
+A turn survives losing the connection it was asked for on. Sessions are ephemeral — the
+server drops one with its socket — but the turn belongs to the conversation, so when the
+socket goes mid-answer the SDK reconnects, rejoins the turn from the last event it gave
+you, and carries on into the same stream. The same holds when the platform deploys
+mid-turn and the answer is handed to another instance. A message that had not been
+delivered yet is simply sent again on a fresh session; one that had is never sent twice.
+
+If the turn cannot be picked back up within a minute, the stream ends with a failure that
+says so — the reply may still have finished, and reopening the conversation will show it.
 
 ### Rejoining a turn already in progress
 

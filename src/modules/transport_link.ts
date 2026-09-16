@@ -25,6 +25,31 @@ export type LinkSessionConfig = {
 };
 
 /**
+ * How long to keep trying to pick a lost turn back up before giving up on it.
+ *
+ * A turn belongs to its conversation, not to the socket that asked for one, so neither losing
+ * the connection nor losing the instance answering it — which is what a deploy does — ends it.
+ * Long enough to outlast a deploy of either service, short enough that a caller awaiting a
+ * reply is not left there forever when the turn really is gone.
+ */
+const RESUME_WINDOW_MS = 60_000;
+
+/** Waits between attempts to pick a turn back up. The last value repeats. */
+const RESUME_BACKOFF_MS = [250, 500, 1_000, 2_000, 4_000, 5_000];
+
+/** What is known about a turn in flight, and everything a resume needs to rejoin it. */
+type TurnProgress = {
+    chatId?: string;
+    /** The last event actually handed to the caller. A resume asks only for what came after it. */
+    lastEventId?: string;
+    /** Whether the caller has already been given the turn's completion. */
+    sawCompletion: boolean;
+};
+
+/** Set when the caller stops listening, which also calls off a resume still trying on its behalf. */
+type Listening = { closed: boolean };
+
+/**
  * Carries a turn over an existing Link connection.
  *
  * Sessions are ephemeral: the server drops them when the socket goes, so one is
@@ -41,13 +66,13 @@ export class LinkConversationTransport implements ConversationTransport {
     }
 
     send(request: TransportTurnRequest, handlers: TransportHandlers): ConversationStream {
-        let closed = false;
+        const listening: Listening = { closed: false };
         const deliver: TransportHandlers = {
-            payload: (payload) => { if (!closed) handlers.payload(payload); },
-            convoId: (convoId) => { if (!closed) handlers.convoId(convoId); },
+            payload: (payload) => { if (!listening.closed) handlers.payload(payload); },
+            convoId: (convoId) => { if (!listening.closed) handlers.convoId(convoId); },
         };
 
-        void this.runTurn(request, deliver, true).catch((error: unknown) => {
+        void this.runTurn(request, deliver, true, listening).catch((error: unknown) => {
             const failure = error instanceof LinkError
                 ? failurePayload(error.code, error.message, error.message, request.chatId)
                 : failurePayload("link_error", String(error), "I'm afraid the connection to Alfred failed.", request.chatId);
@@ -55,7 +80,7 @@ export class LinkConversationTransport implements ConversationTransport {
             deliver.payload(failure);
         });
 
-        return { close: () => { closed = true; } };
+        return { close: () => { listening.closed = true; } };
     }
 
     /**
@@ -123,46 +148,28 @@ export class LinkConversationTransport implements ConversationTransport {
      * ordinary answer for one that is simply idle.
      */
     attach(request: TransportAttachRequest, handlers: TransportHandlers): ConversationStream {
-        let closed = false;
-        const deliver = (payload: unknown) => { if (!closed) handlers.payload(payload); };
+        const listening: Listening = { closed: false };
+        const deliver = (payload: unknown) => { if (!listening.closed) handlers.payload(payload); };
+        const progress: TurnProgress = { chatId: request.chatId, lastEventId: request.afterEventId, sawCompletion: false };
 
-        const watching = this.link.exchange("conversation.attach", {
-            chatId: request.chatId,
-            ...(request.afterEventId ? { afterEventId: request.afterEventId } : {}),
-        }, {
-            // A turn takes as long as it takes; only the transport dying ends it early.
-            timeoutMs: 0,
-            isDone: (frame) => frame.type === "conversation.done",
-            onFrame: (frame) => {
-                if (frame.type === "conversation.event") {
-                    const payload = frame.payload;
-                    const event = payload.event as ConversationEvent;
-                    const final = event.type === "response_status" && Boolean(event.payload?.completed);
+        // Watching is allowed to end in silence, which is why `quietWhenGone` is true here and
+        // false for a turn of our own: nobody is waiting on an answer to a question they asked.
+        const resume = () => this.resume(request.chatId, progress, deliver, listening, { quietWhenGone: true });
 
-                    deliver({
-                        success: true,
-                        data: {
-                            response: event,
-                            convoId: payload.chatId ?? request.chatId,
-                            ...(final ? { quitStream: true } : {}),
-                        },
-                    });
-                    return;
-                }
-
-                if (frame.type === "conversation.notice") {
-                    deliver(noticePayload(frame.payload.message, frame.payload.chatId ?? request.chatId));
-                }
-            },
-        });
-
-        void watching.then((done) => {
-            const payload = (done as LinkServerFrameOf<"conversation.done">).payload;
+        void this.watch(request.chatId, progress, deliver).then(async (payload) => {
             if (payload.ok) return;
 
             // Nothing running is not a failure: the caller asked to watch a conversation
             // that has nothing to watch, and the stream simply ends.
             if (payload.code === "no_active_turn") return;
+
+            // The turn is alive, somewhere this connection can no longer see. Following it is
+            // the entire point of being here.
+            if (payload.code === "turn_suspended") {
+                if (payload.lastEventId) progress.lastEventId = payload.lastEventId;
+                await resume();
+                return;
+            }
 
             deliver(failurePayload(
                 payload.code ?? "link_error",
@@ -170,8 +177,14 @@ export class LinkConversationTransport implements ConversationTransport {
                 payload.message ?? payload.error ?? "I'm afraid I couldn't follow that response.",
                 payload.chatId ?? request.chatId,
             ));
-        }, (error: unknown) => {
+        }, async (error: unknown) => {
             if (error instanceof LinkError && error.code === "no_active_turn") return;
+
+            // The socket went while we were watching. The turn did not go with it.
+            if (error instanceof LinkError && error.code === "disconnected") {
+                await resume();
+                return;
+            }
 
             deliver(error instanceof LinkError
                 ? failurePayload(error.code, error.message, error.message, request.chatId)
@@ -180,8 +193,8 @@ export class LinkConversationTransport implements ConversationTransport {
 
         return {
             close: () => {
-                if (closed) return;
-                closed = true;
+                if (listening.closed) return;
+                listening.closed = true;
 
                 // Best-effort: a socket that has gone has already ended the watch for us.
                 try {
@@ -193,17 +206,16 @@ export class LinkConversationTransport implements ConversationTransport {
         };
     }
 
-    private async runTurn(request: TransportTurnRequest, handlers: TransportHandlers, mayRetry: boolean): Promise<void> {
+    private async runTurn(request: TransportTurnRequest, handlers: TransportHandlers, mayRetry: boolean, listening: Listening): Promise<void> {
         const sessionId = await this.session(request);
 
-        let chatId = request.chatId ?? this.sessionChatId;
+        const progress: TurnProgress = { chatId: request.chatId ?? this.sessionChatId, sawCompletion: false };
         let announcedChatId = false;
-        let sawCompletion = false;
 
         const learnChatId = (candidate?: string) => {
             if (!candidate) return;
 
-            chatId = candidate;
+            progress.chatId = candidate;
             this.sessionChatId = candidate;
             handlers.convoId(candidate);
 
@@ -216,45 +228,58 @@ export class LinkConversationTransport implements ConversationTransport {
             }
         };
 
-        learnChatId(chatId);
+        learnChatId(progress.chatId);
 
-        const done = await this.link.exchange("conversation.chat", {
-            sessionId,
-            message: request.message,
-            ...(request.model ? { model: request.model } : {}),
-            ...(request.instructions ? { instructions: request.instructions } : {}),
-            ...(request.personality ? { personality: request.personality } : {}),
-        }, {
-            // A turn takes as long as it takes; only the transport dying ends it early.
-            timeoutMs: 0,
-            isDone: (frame) => frame.type === "conversation.done",
-            onFrame: (frame) => {
-                if (frame.type === "conversation.event") {
-                    const payload = frame.payload;
-                    learnChatId(payload.chatId);
+        let done: LinkServerFrame;
+        try {
+            done = await this.link.exchange("conversation.chat", {
+                sessionId,
+                message: request.message,
+                ...(request.model ? { model: request.model } : {}),
+                ...(request.instructions ? { instructions: request.instructions } : {}),
+                ...(request.personality ? { personality: request.personality } : {}),
+            }, {
+                // A turn takes as long as it takes; only the transport dying ends it early.
+                timeoutMs: 0,
+                isDone: (frame) => frame.type === "conversation.done",
+                onFrame: (frame) => {
+                    if (frame.type === "conversation.event") {
+                        const payload = frame.payload;
+                        learnChatId(payload.chatId);
+                        if (payload.eventId) progress.lastEventId = payload.eventId;
 
-                    const event = payload.event as ConversationEvent;
-                    const final = event.type === "response_status" && Boolean(event.payload?.completed);
-                    if (final) sawCompletion = true;
+                        const event = payload.event as ConversationEvent;
+                        const final = event.type === "response_status" && Boolean(event.payload?.completed);
+                        if (final) progress.sawCompletion = true;
 
-                    handlers.payload({
-                        success: true,
-                        data: {
-                            response: event,
-                            ...(payload.chatId ?? chatId ? { convoId: payload.chatId ?? chatId } : {}),
-                            ...(final ? { quitStream: true } : {}),
-                        },
-                    });
-                    return;
-                }
+                        handlers.payload({
+                            success: true,
+                            data: {
+                                response: event,
+                                ...(payload.chatId ?? progress.chatId ? { convoId: payload.chatId ?? progress.chatId } : {}),
+                                ...(final ? { quitStream: true } : {}),
+                            },
+                        });
+                        return;
+                    }
 
-                if (frame.type === "conversation.notice") {
-                    const payload = frame.payload;
-                    learnChatId(payload.chatId);
-                    handlers.payload(noticePayload(payload.message, payload.chatId ?? chatId));
-                }
-            },
-        });
+                    if (frame.type === "conversation.notice") {
+                        const payload = frame.payload;
+                        learnChatId(payload.chatId);
+                        handlers.payload(noticePayload(payload.message, payload.chatId ?? progress.chatId));
+                    }
+                },
+            });
+        } catch (error) {
+            // The socket went while the turn was running. The turn did not go with it: it
+            // belongs to the conversation, and the conversation outlives this connection.
+            if (progress.chatId && error instanceof LinkError && error.code === "disconnected") {
+                await this.resume(progress.chatId, progress, handlers.payload, listening, { quietWhenGone: false });
+                return;
+            }
+
+            throw error;
+        }
 
         const payload = (done as LinkServerFrameOf<"conversation.done">).payload;
         learnChatId(payload.chatId);
@@ -262,7 +287,7 @@ export class LinkConversationTransport implements ConversationTransport {
         if (payload.ok) {
             // Nearly always the pipeline's own completion event has already closed the
             // stream; this is for the turn that ended without one.
-            if (!sawCompletion) handlers.payload(completedPayload(payload.chatId ?? chatId));
+            if (!progress.sawCompletion) handlers.payload(completedPayload(payload.chatId ?? progress.chatId));
             return;
         }
 
@@ -270,7 +295,16 @@ export class LinkConversationTransport implements ConversationTransport {
         // invisible to the caller, and the message has not been delivered yet.
         if (payload.code === "unknown_session" && mayRetry) {
             this.sessionId = undefined;
-            await this.runTurn(request, handlers, false);
+            await this.runTurn(request, handlers, false, listening);
+            return;
+        }
+
+        // Core suspended the turn at a deploy and handed it to another instance, and the link
+        // service followed it as far as it could. The answer is still being written; rejoining
+        // it is the difference between a deploy costing a reply and costing nothing.
+        if (payload.code === "turn_suspended" && progress.chatId) {
+            if (payload.lastEventId) progress.lastEventId = payload.lastEventId;
+            await this.resume(progress.chatId, progress, handlers.payload, listening, { quietWhenGone: false });
             return;
         }
 
@@ -280,7 +314,150 @@ export class LinkConversationTransport implements ConversationTransport {
             payload.code === "turn_failed" ? payload.error ?? payload.code : payload.code ?? "link_error",
             payload.error ?? "The turn failed.",
             payload.message ?? payload.error ?? "I'm afraid that turn could not be completed.",
-            payload.chatId ?? chatId,
+            payload.chatId ?? progress.chatId,
+        ));
+    }
+
+    /**
+     * One `conversation.attach`: streams a turn's events to the caller and resolves with how
+     * that watch ended.
+     *
+     * Shared by watching somebody else's turn and by rejoining one of our own, because from
+     * here the two are the same act. `progress` is carried rather than returned: a watch that
+     * dies halfway still has to leave behind where it got to, or a resume would replay from
+     * the beginning and the caller would read the answer twice.
+     */
+    private async watch(chatId: string, progress: TurnProgress, deliver: (payload: unknown) => void): Promise<LinkServerFrameOf<"conversation.done">["payload"]> {
+        const done = await this.link.exchange("conversation.attach", {
+            chatId,
+            ...(progress.lastEventId ? { afterEventId: progress.lastEventId } : {}),
+        }, {
+            // A turn takes as long as it takes; only the transport dying ends it early.
+            timeoutMs: 0,
+            isDone: (frame) => frame.type === "conversation.done",
+            onFrame: (frame) => {
+                if (frame.type === "conversation.event") {
+                    const payload = frame.payload;
+                    if (payload.eventId) progress.lastEventId = payload.eventId;
+
+                    const event = payload.event as ConversationEvent;
+                    const final = event.type === "response_status" && Boolean(event.payload?.completed);
+                    if (final) progress.sawCompletion = true;
+
+                    deliver({
+                        success: true,
+                        data: {
+                            response: event,
+                            convoId: payload.chatId ?? chatId,
+                            ...(final ? { quitStream: true } : {}),
+                        },
+                    });
+                    return;
+                }
+
+                if (frame.type === "conversation.notice") {
+                    deliver(noticePayload(frame.payload.message, frame.payload.chatId ?? chatId));
+                }
+            },
+        });
+
+        return (done as LinkServerFrameOf<"conversation.done">).payload;
+    }
+
+    /**
+     * Picks a turn back up after losing sight of it.
+     *
+     * Two ways to lose one, one way to get it back. The socket can go — a deploy of the link
+     * service, a proxy timing out — which rejects the exchange carrying the turn. Or core can
+     * suspend the turn at its own deploy and hand it to another instance, which the link
+     * service follows for two minutes before giving up and saying `turn_suspended`. Either way
+     * the turn is still being answered and the conversation still holds it, so this re-attaches
+     * from the last event the caller was actually given and the stream reads as one answer.
+     *
+     * `no_active_turn` is the ambiguous reply and it is deliberately not treated as an ending:
+     * during a handover it means "not picked up yet" far more often than it means "gone", and
+     * the window is what decides between them.
+     *
+     * Nothing here throws. It runs behind a stream the caller already holds, so the outcomes
+     * that matter are the ones delivered into it: a completion, or a failure that says plainly
+     * that the answer was lost track of rather than that it failed.
+     */
+    private async resume(
+        chatId: string,
+        progress: TurnProgress,
+        deliver: (payload: unknown) => void,
+        listening: Listening,
+        options: { quietWhenGone: boolean },
+    ): Promise<void> {
+        const deadline = Date.now() + RESUME_WINDOW_MS;
+
+        for (let attempt = 0; !listening.closed && Date.now() < deadline; attempt++) {
+            if (attempt > 0) await pause(RESUME_BACKOFF_MS[Math.min(attempt - 1, RESUME_BACKOFF_MS.length - 1)]!);
+            if (listening.closed) return;
+
+            try {
+                // The link reconnects on its own; this waits for it rather than racing it.
+                await this.link.ready();
+            } catch (error) {
+                // Closed for good means nobody is coming back. Anything else is the link still
+                // being down, which is exactly what the window is for.
+                if (error instanceof LinkError && error.code === "closed") break;
+                continue;
+            }
+
+            // An attachment from before may still be registered against a connection that is
+            // itself still alive, and the server allows only one per conversation. Dropping it
+            // first costs nothing when there is none to drop.
+            try {
+                this.link.send("conversation.detach", { chatId });
+            } catch {
+                // Not connected. The server dropped the attachment with the socket.
+            }
+
+            let payload: LinkServerFrameOf<"conversation.done">["payload"];
+            try {
+                payload = await this.watch(chatId, progress, deliver);
+            } catch (error) {
+                if (error instanceof LinkError && error.code === "closed") break;
+                if (error instanceof LinkError && error.code === "no_active_turn" && options.quietWhenGone) return;
+                continue;
+            }
+
+            if (payload.ok) {
+                if (!progress.sawCompletion) deliver(completedPayload(payload.chatId ?? chatId));
+                return;
+            }
+
+            // Not picked up yet, or suspended again mid-hop. Both mean it is still moving.
+            if (payload.code === "no_active_turn") {
+                if (options.quietWhenGone) return;
+                continue;
+            }
+
+            if (payload.code === "turn_suspended") {
+                if (payload.lastEventId) progress.lastEventId = payload.lastEventId;
+                continue;
+            }
+
+            deliver(failurePayload(
+                payload.code ?? "link_error",
+                payload.error ?? "The turn could not be picked back up.",
+                payload.message ?? payload.error ?? "I'm afraid I couldn't follow that response.",
+                payload.chatId ?? chatId,
+            ));
+            return;
+        }
+
+        if (listening.closed) return;
+        // The completion already reached the caller; there is nothing left to say.
+        if (progress.sawCompletion) return;
+        if (options.quietWhenGone) return;
+
+        deliver(failurePayload(
+            "turn_suspended",
+            "The turn could not be picked back up.",
+            "I'm afraid I lost track of that answer. It may well have finished — reopen the conversation to see where it got to.",
+            chatId,
         ));
     }
 
@@ -308,4 +485,12 @@ export class LinkConversationTransport implements ConversationTransport {
 
         return payload.sessionId;
     }
+}
+
+/** Waits, without keeping a Node process alive on its own. */
+function pause(ms: number): Promise<void> {
+    return new Promise(resolve => {
+        const timer = setTimeout(resolve, ms);
+        (timer as unknown as { unref?: () => void }).unref?.();
+    });
 }

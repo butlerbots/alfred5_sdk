@@ -1,5 +1,12 @@
 export const CONFIG = {
     server: "https://core.butler.now",
+    /**
+     * Where links connect.
+     *
+     * Not the core server: links are carried by their own service, so the SDK holds two
+     * addresses rather than one.
+     */
+    link: "https://link.butler.now",
     healthcheckPath: "/api/healthcheck",
     paths: {
         conversation: {
@@ -44,3 +51,19 @@ export const CONFIG = {
 }
 
 export type APIPath = keyof typeof CONFIG.paths.conversation;
+
+const withoutTrailingSlash = (url: string) => url.replace(/\/+$/, "");
+
+/**
+ * Which server a link should connect to.
+ *
+ * `linkUrl` names it outright and always wins. Failing that, a `serverUrl` pointing anywhere
+ * other than the hosted core is taken at its word: a self-hosted stack is usually one address,
+ * and sending an API key to a host nobody named would be a worse surprise than a wrong path.
+ * Otherwise it is the hosted link service, which is what the core server used to be and is not.
+ */
+export function resolveLinkUrl(config: { linkUrl?: string; serverUrl?: string }): string {
+    if (config.linkUrl) return config.linkUrl;
+    if (config.serverUrl && withoutTrailingSlash(config.serverUrl) !== withoutTrailingSlash(CONFIG.server)) return config.serverUrl;
+    return CONFIG.link;
+}

@@ -178,7 +178,13 @@ export type LinkServerPayloads = {
     "conversation.open": { sessionId: string; chatId?: string };
     "conversation.event": { chatId?: string; eventId?: string; event: ConversationEvent };
     "conversation.notice": { chatId?: string; message: string };
-    "conversation.done": { chatId?: string; ok: boolean; code?: string; error?: string; message?: string };
+    /**
+     * A turn ended, one way or another.
+     *
+     * `lastEventId` comes with `turn_suspended`: the turn is still being answered somewhere
+     * and this is where a `conversation.attach` should pick it back up.
+     */
+    "conversation.done": { chatId?: string; ok: boolean; code?: string; error?: string; message?: string; lastEventId?: string };
     /** A turn was stopped. `mode` is what was applied, `requestedMode` what was asked for. */
     "conversation.stopped": { chatId: string; mode: "soft" | "hard"; requestedMode: "soft" | "hard"; by: "user" | "system" };
     /** A steered message was accepted and will reach the model at its next step boundary. */
