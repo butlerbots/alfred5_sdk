@@ -2,6 +2,24 @@ import { CONFIG, APIPath, resolveLinkUrl } from "./config";
 import { Link, LinkOptions } from "./link";
 import { Conversation, ConversationOptions } from "./modules/conversation";
 import { getUsagePolicyData, UsagePolicyDataOptions } from "./modules/usage";
+import {
+    cancelJob,
+    getJob,
+    listJobs,
+    updateJob,
+    updateJobSettings,
+    type CancelJobOptions,
+    type GetJobOptions,
+    type ListJobsOptions,
+    type UpdateJobOptions,
+    type UpdateJobSettingsOptions,
+} from "./modules/jobs";
+import {
+    answerDelivery,
+    listDeliveries,
+    type AnswerDeliveryOptions,
+    type ListDeliveriesOptions,
+} from "./modules/outreach";
 
 type OptionalApiKey<T> = Omit<T, "apiKey"> & {
     /** Optional API key, defaults to API key specified in client */
@@ -83,6 +101,46 @@ export class ButlerBotClient {
     getUsagePolicyData(config: OptionalApiKey<UsagePolicyDataOptions>) {
         return getUsagePolicyData({ serverURL: this.serverUrl, apiKey: this.apiKey, debug: this.debug, ...config });
     }
+
+    /** A page of this user's jobs, with what their jobs may spend today */
+    listJobs(config: OptionalApiKey<ListJobsOptions> = {}) {
+        return listJobs(this.forRequest(config));
+    }
+
+    /** One job, with its plan, its journal and the questions waiting on the user */
+    getJob(config: OptionalApiKey<GetJobOptions>) {
+        return getJob(this.forRequest(config));
+    }
+
+    /** Stops a job. Throws a `ButlerBotAPIError` with `isConflict` when it had already finished */
+    cancelJob(config: OptionalApiKey<CancelJobOptions>) {
+        return cancelJob(this.forRequest(config));
+    }
+
+    /** Changes one job's autonomy: how far it may act, until when, and what it always asks about */
+    updateJob(config: OptionalApiKey<UpdateJobOptions>) {
+        return updateJob(this.forRequest(config));
+    }
+
+    /** Changes this user's job settings: their daily allowance and what new jobs start with */
+    updateJobSettings(config: OptionalApiKey<UpdateJobSettingsOptions> = {}) {
+        return updateJobSettings(this.forRequest(config));
+    }
+
+    /** A page of the inbox: what Alfred has told or asked this user outside a chat */
+    listDeliveries(config: OptionalApiKey<ListDeliveriesOptions> = {}) {
+        return listDeliveries(this.forRequest(config));
+    }
+
+    /** Answers a delivery. Throws a `ButlerBotAPIError` with `isConflict` when it was already answered */
+    answerDelivery(config: OptionalApiKey<AnswerDeliveryOptions>) {
+        return answerDelivery(this.forRequest(config));
+    }
+
+    /** The client's own server and key underneath whatever the call named itself. */
+    private forRequest<T extends { serverURL?: string; apiKey: string; debug?: boolean }>(config: OptionalApiKey<T>): T {
+        return { serverURL: this.serverUrl, apiKey: this.apiKey, debug: this.debug, ...given(config) } as T;
+    }
 }
 
 // Expose types from subsequent modules
@@ -97,6 +155,22 @@ export type {
     TransportTurnRequest,
     TransportHandlers,
 } from "./modules/transport";
+export { ButlerBotAPIError } from "./util/api_error";
+export { listJobs, getJob, cancelJob, updateJob, updateJobSettings } from "./modules/jobs";
+export type {
+    JobsRequestOptions,
+    ListJobsOptions,
+    GetJobOptions,
+    CancelJobOptions,
+    UpdateJobOptions,
+    UpdateJobSettingsOptions,
+} from "./modules/jobs";
+export { listDeliveries, answerDelivery } from "./modules/outreach";
+export type {
+    OutreachRequestOptions,
+    ListDeliveriesOptions,
+    AnswerDeliveryOptions,
+} from "./modules/outreach";
 export { LinkConversationTransport } from "./modules/transport_link";
 export { SSEConversationTransport } from "./modules/transport_sse";
 export type { SteerResult, TurnStopMode, TurnStopped } from "./modules/transport";
