@@ -46,6 +46,16 @@ export const CONFIG = {
             policy: {
                 v3: { base: "/api/user/usage/v3/policy" },
             }
+        },
+        jobs: {
+            /** The collection. One job is `${base}/${jobId}`, its cancel `${base}/${jobId}/cancel`. */
+            base: "/api/jobs",
+            /** The owner's job settings, which live on the user rather than on a job. */
+            settings: "/api/user/jobs-settings",
+        },
+        outreach: {
+            /** The inbox. One delivery's answer is `${base}/${deliveryId}/answer`. */
+            base: "/api/outreach",
         }
     }
 }
