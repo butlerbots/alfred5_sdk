@@ -322,6 +322,71 @@ seen. A conversation with nothing running simply ends the stream.
 Neither transport can cancel a turn: `close()` stops delivery locally, and the reply is
 still generated and stored.
 
+## Jobs
+
+A job is long-running work Alfred does on its own, run as a sequence of short shifts against
+a plan it writes. The client reads them and steers them; it does not run them.
+
+```typescript
+const { jobs, allowance, spentTodayUsd } = await client.listJobs({ status: "running", page: 1, limit: 20 });
+const { job, plan, journal, openDeliveries, autonomyLine } = await client.getJob({ jobId });
+
+await client.updateJob({ jobId, autonomy: "free", autonomyUntil: Date.now() + 86_400_000 });
+await client.cancelJob({ jobId });
+```
+
+Paging is 1-based, and every listing answers with `page`, `limit` and `total`. A listing also
+carries `allowance` — what this user's jobs may spend today and what is left of it, or
+`{ perDayUsd: 0, source: null, refused, message }` when their plan does not include jobs.
+
+`autonomy` is how far a job may act outward without asking: `ask`, `free` or `auto`.
+`autonomyUntil` is when a loosened setting lapses back to asking, and `alwaysAsk` is what the
+job asks about however free it otherwise is. `effectiveAutonomy` on a job is what the gate
+actually reads, with the owner's default and any lapse already applied. What new jobs start
+with, and what they may spend, is the user's own setting:
+
+```typescript
+await client.updateJobSettings({ allowanceUsd: 5, autonomy: "ask", alwaysAsk: ["spending money"] });
+```
+
+## Outreach
+
+Outreach is what Alfred has told or asked this user outside a chat. The record is the inbox —
+there is no separate notification — so a question a job is parked on is a delivery with
+`intent: "question"` and no `answered`:
+
+```typescript
+const { deliveries } = await client.listDeliveries({ page: 1, limit: 20 });
+const { delivery, job } = await client.answerDelivery({ deliveryId, text: "The one in Gardens" });
+```
+
+Answering closes the delivery, and when it belongs to a job the answer is put on that job's
+inbox, which wakes a job that was parked waiting for it — `job.delivered` says what became of
+it. An approval takes `decision: "approve" | "deny"` alongside the text.
+
+### When a call fails
+
+Every jobs and outreach call throws `ButlerBotAPIError` when the server does not answer with a
+success. The status is on the error, so the cases worth branching on are told apart without
+reading a message, and the parsed body is kept — a rejected cancel still carries the job, a
+rejected answer still carries the delivery:
+
+```typescript
+import { ButlerBotAPIError } from "@butlerbot/sdk";
+
+try {
+    await client.cancelJob({ jobId });
+} catch (error) {
+    if (error instanceof ButlerBotAPIError && error.isConflict) {
+        // 409: it had already finished. `error.body.job` is how it settled.
+    } else throw error;
+}
+```
+
+`isNotFound` (404), `isConflict` (409) and `isBadRequest` (400) are the three; `status`,
+`error` and `errormessage` are the server's own words. A job or delivery that is not this key's
+is answered exactly as one that does not exist, so a 404 means either.
+
 ## Environment
 
 Node 18+. Node 22 and every browser have a built-in WebSocket; on older Node, install
