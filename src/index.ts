@@ -25,6 +25,19 @@ export type ButlerBotClientOptions = {
     debug?: boolean;
 }
 
+/**
+ * The options a caller actually gave, with the keys they left out removed.
+ *
+ * A client's own API key and URLs are the fallback for whatever a factory call omits, and the
+ * usual way to omit something is to forward an optional setting that happens to be unset —
+ * `createLink({ serverUrl: process.env.LINK_URL })`. Spread as it stands, that `undefined`
+ * lands on top of the client's resolved value and erases it, so the link ends up at the hosted
+ * service rather than the self-hosted stack the client was pointed at. Absent means "not given".
+ */
+function given<T extends object>(config: T): Partial<T> {
+    return Object.fromEntries(Object.entries(config).filter(([, value]) => value !== undefined)) as Partial<T>;
+}
+
 export class ButlerBotClient {
     private apiKey: string;
     private serverUrl: string;
@@ -52,7 +65,7 @@ export class ButlerBotClient {
 
     /** Spawns a new Conversation, inherits api key and server URL */
     createConversation<V extends APIPath = "v4">(config: OptionalApiKey<ConversationOptions<V>> = {}): Conversation<V> {
-        return new Conversation<V>({ debug: this.debug, apiKey: this.apiKey, serverUrl: this.serverUrl, ...config } as ConversationOptions<V>);
+        return new Conversation<V>({ debug: this.debug, apiKey: this.apiKey, serverUrl: this.serverUrl, ...given(config) } as ConversationOptions<V>);
     }
 
     /**
@@ -63,7 +76,7 @@ export class ButlerBotClient {
      * `serverUrl` here, or `linkUrl` to the client, to point somewhere else.
      */
     createLink(config: OptionalApiKey<LinkOptions>): Link {
-        return new Link({ debug: this.debug, apiKey: this.apiKey, serverUrl: this.linkUrl, ...config } as LinkOptions);
+        return new Link({ debug: this.debug, apiKey: this.apiKey, serverUrl: this.linkUrl, ...given(config) } as LinkOptions);
     }
 
     /** Get current usage policy data */
