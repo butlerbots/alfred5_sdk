@@ -406,3 +406,171 @@ describe("Watching a running turn over a link", () => {
         expect(received).toEqual([]);
     });
 });
+
+// =============================================
+// PICKING A TURN BACK UP
+// =============================================
+
+/**
+ * A turn belongs to its conversation, not to the socket that asked for one. Two things used to
+ * break that: core suspending a turn at a deploy and handing it on, which reached the client as
+ * `turn_suspended` and was reported as a failed turn; and the socket itself going, which
+ * rejected the exchange and reported the connection failing — in both cases over a half-written
+ * answer that was still being written somewhere. The point of the whole split is that a deploy
+ * costs nobody their reply.
+ */
+describe("Picking a turn back up", () => {
+    it("rejoins a suspended turn rather than reporting it as a failure", async () => {
+        const { socket, convo } = await linkedConversation();
+
+        const received: Payload[] = [];
+        convo.send("what is the weather", (chunk) => received.push(chunk as Payload));
+        const chat = await openSession(socket, "sess-1");
+
+        socket.push("conversation.event", { chatId: "convo-1", eventId: "1", event: messageEvent("Half a") }, chat.id);
+        socket.push("conversation.done", {
+            chatId: "convo-1", ok: false, code: "turn_suspended", error: "The turn moved.", lastEventId: "1",
+        }, chat.id);
+        await flush();
+
+        // Resumed from the last event the caller was actually given, so nothing is read twice.
+        const attach = socket.ofType("conversation.attach").at(-1)!;
+        expect(attach.payload).toMatchObject({ chatId: "convo-1", afterEventId: "1" });
+
+        socket.push("conversation.event", { chatId: "convo-1", eventId: "2", event: messageEvent("Half a cup", true) }, attach.id);
+        socket.push("conversation.event", { chatId: "convo-1", eventId: "3", event: completionEvent() }, attach.id);
+        socket.push("conversation.done", { chatId: "convo-1", ok: true }, attach.id);
+        await flush();
+
+        // One unbroken stream: the caller cannot tell the turn changed hands.
+        expect(received.every(entry => entry.success)).toBe(true);
+        expect(received.map(entry => entry.data.response?.type))
+            .toEqual(["convo_status", "message", "message", "response_status"]);
+        expect(received.at(-1)!.data.quitStream).toBe(true);
+    });
+
+    it("resumes from what it was given when the server names no resume point", async () => {
+        const { socket, convo } = await linkedConversation();
+
+        convo.send("hello", () => undefined);
+        const chat = await openSession(socket, "sess-1");
+
+        socket.push("conversation.event", { chatId: "convo-1", eventId: "4", event: messageEvent("Working") }, chat.id);
+        socket.push("conversation.done", { chatId: "convo-1", ok: false, code: "turn_suspended", error: "The turn moved." }, chat.id);
+        await flush();
+
+        expect(socket.ofType("conversation.attach").at(-1)!.payload).toMatchObject({ afterEventId: "4" });
+    });
+
+    it("waits out a handover that has not been picked up yet", async () => {
+        // `no_active_turn` during a handover means "not yet" far more often than "gone", and
+        // ending the stream on the first one would report a live answer as a finished one.
+        const { socket, convo } = await linkedConversation();
+
+        const received: Payload[] = [];
+        convo.send("hello", (chunk) => received.push(chunk as Payload));
+        const chat = await openSession(socket, "sess-1");
+
+        socket.push("conversation.event", { chatId: "convo-1", eventId: "1", event: messageEvent("Half a") }, chat.id);
+        socket.push("conversation.done", {
+            chatId: "convo-1", ok: false, code: "turn_suspended", error: "The turn moved.", lastEventId: "1",
+        }, chat.id);
+        await flush();
+
+        const first = socket.ofType("conversation.attach").at(-1)!;
+        socket.push("conversation.done", { chatId: "convo-1", ok: false, code: "no_active_turn", error: "Nothing is running." }, first.id);
+        await flush();
+
+        // Nothing said to the caller yet: the new instance may still be claiming it.
+        expect(received.some(entry => entry.success === false)).toBe(false);
+
+        await new Promise(resolve => setTimeout(resolve, 400));
+        const second = socket.ofType("conversation.attach").at(-1)!;
+        expect(second.id).not.toBe(first.id);
+
+        socket.push("conversation.event", { chatId: "convo-1", eventId: "2", event: messageEvent("Half a cup", true) }, second.id);
+        socket.push("conversation.event", { chatId: "convo-1", eventId: "3", event: completionEvent() }, second.id);
+        socket.push("conversation.done", { chatId: "convo-1", ok: true }, second.id);
+        await flush();
+
+        expect(received.every(entry => entry.success)).toBe(true);
+        expect(received.at(-1)!.data.response?.type).toBe("response_status");
+    });
+
+    it("rejoins the turn on a new connection when the socket goes", async () => {
+        // The commonest way to lose a turn, and the one that used to end with "the connection
+        // to Alfred failed" over an answer that was still being written.
+        const harness = createLinkHarness({ reconnect: true });
+        const socket = await harness.connect();
+        const convo = new Conversation({ apiKey: "ap-abc_123", transport: harness.link });
+
+        const received: Payload[] = [];
+        convo.send("hello", (chunk) => received.push(chunk as Payload));
+        const chat = await openSession(socket, "sess-1");
+
+        socket.push("conversation.event", { chatId: "convo-1", eventId: "1", event: messageEvent("Half a") }, chat.id);
+        await flush();
+
+        socket.drop();
+        const reconnected = await harness.handshake(await harness.nextSocket(2));
+        await flush();
+
+        const attach = reconnected.ofType("conversation.attach").at(-1);
+        expect(attach?.payload).toMatchObject({ chatId: "convo-1", afterEventId: "1" });
+
+        reconnected.push("conversation.event", { chatId: "convo-1", eventId: "2", event: messageEvent("Half a cup", true) }, attach!.id);
+        reconnected.push("conversation.event", { chatId: "convo-1", eventId: "3", event: completionEvent() }, attach!.id);
+        reconnected.push("conversation.done", { chatId: "convo-1", ok: true }, attach!.id);
+        await flush();
+
+        expect(received.every(entry => entry.success)).toBe(true);
+        expect(received.at(-1)!.data.quitStream).toBe(true);
+    });
+
+    it("stops trying when the caller stops listening", async () => {
+        const { socket, convo } = await linkedConversation();
+
+        const received: Payload[] = [];
+        const stream = convo.send("hello", (chunk) => received.push(chunk as Payload));
+        const chat = await openSession(socket, "sess-1");
+
+        socket.push("conversation.done", {
+            chatId: "convo-1", ok: false, code: "turn_suspended", error: "The turn moved.", lastEventId: "1",
+        }, chat.id);
+        await flush();
+
+        const attaches = socket.ofType("conversation.attach").length;
+        const delivered = received.length;
+        stream.close();
+        socket.push("conversation.done", { chatId: "convo-1", ok: false, code: "no_active_turn", error: "Nothing is running." }, socket.ofType("conversation.attach").at(-1)!.id);
+
+        await new Promise(resolve => setTimeout(resolve, 400));
+
+        // No further attempts, and nothing more delivered to a caller that has gone.
+        expect(socket.ofType("conversation.attach")).toHaveLength(attaches);
+        expect(received).toHaveLength(delivered);
+    });
+
+    it("says plainly when a turn cannot be picked back up", async () => {
+        // A refusal is not a handover: there is nothing to wait for, and pretending otherwise
+        // would leave a caller waiting out the whole window for an answer already refused.
+        const { socket, convo } = await linkedConversation();
+
+        const received: Payload[] = [];
+        convo.send("hello", (chunk) => received.push(chunk as Payload));
+        const chat = await openSession(socket, "sess-1");
+
+        socket.push("conversation.done", {
+            chatId: "convo-1", ok: false, code: "turn_suspended", error: "The turn moved.", lastEventId: "1",
+        }, chat.id);
+        await flush();
+
+        const attach = socket.ofType("conversation.attach").at(-1)!;
+        socket.push("conversation.done", {
+            chatId: "convo-1", ok: false, code: "forbidden_scope", error: "That conversation is not yours.",
+        }, attach.id);
+        await flush();
+
+        expect(received.at(-1)).toMatchObject({ success: false, data: { code: "forbidden_scope", quitStream: true } });
+    });
+});
