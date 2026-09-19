@@ -5,6 +5,7 @@ import type {
     JobDetailResponse,
     JobJournalPage,
     JobListResponse,
+    JobPhaseModelResponse,
     JobSettingsResponse,
     JobSettingsUpdate,
     JobStatus,
@@ -53,6 +54,16 @@ export type UpdateJobOptions = JobsRequestOptions & {
     autonomyUntil?: string | number | null;
     /** Things this job asks about however free it otherwise is. */
     alwaysAsk?: string[];
+    /** A ceiling on what the job may spend in all, in dollars. Null clears it. */
+    capUsd?: number | null;
+};
+
+export type SetPhaseModelOptions = JobsRequestOptions & {
+    jobId: string;
+    /** The phase's id as the plan names it. */
+    phaseId: string;
+    /** One of the detail's `phaseModels`. */
+    model: string;
 };
 
 export type UpdateJobSettingsOptions = JobsRequestOptions & JobSettingsUpdate;
@@ -135,8 +146,29 @@ export async function updateJob(options: UpdateJobOptions): Promise<JobUpdateRes
     return requestAPI<JobUpdateResponse>({
         url,
         method: "PATCH",
-        body: body({ title: options.title, autonomy: options.autonomy, autonomyUntil: options.autonomyUntil, alwaysAsk: options.alwaysAsk }),
+        body: body({ title: options.title, autonomy: options.autonomy, autonomyUntil: options.autonomyUntil, alwaysAsk: options.alwaysAsk, capUsd: options.capUsd }),
         action: `update job ${options.jobId}`,
+    });
+}
+
+/**
+ * Changes the model one phase of a job's plan runs on.
+ *
+ * Only a phase that has not started or is blocked: a running or done phase's model is what its
+ * work ran on. A model the owner's plan cannot run is a 400 whose body names the ones it can.
+ */
+export async function setPhaseModel(options: SetPhaseModelOptions): Promise<JobPhaseModelResponse> {
+    const url = formatURL(
+        `${jobsBase(options)}/${encodeURIComponent(options.jobId)}/plan/${encodeURIComponent(options.phaseId)}`,
+        {},
+        { apiKey: options.apiKey, debug: options.debug },
+    );
+
+    return requestAPI<JobPhaseModelResponse>({
+        url,
+        method: "PATCH",
+        body: { model: options.model },
+        action: `set the model of phase ${options.phaseId} of job ${options.jobId}`,
     });
 }
 
