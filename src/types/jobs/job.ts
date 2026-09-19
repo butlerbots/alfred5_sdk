@@ -14,6 +14,11 @@ export const JOB_STATUSES = [
     "waiting_user",
     "waiting_approval",
     "waiting_child",
+    /**
+     * Parked with no wake time, on a tool call one of its shifts started that is still
+     * running in the background as a task; the task settling re-queues the job.
+     */
+    "waiting_task",
     "waiting_budget",
     "review",
     "done",
