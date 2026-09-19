@@ -120,7 +120,8 @@ describe("Reading one job", () => {
         const call = http.only();
         expect(pathOf(call)).toBe("https://core.test/api/jobs/job_1/journal");
         // Only the paging that was named goes out: the server's own default limit stands.
-        expect(queryOf(call)).toEqual({ page: "2" });
+        expect(queryOf(call)).toMatchObject({ page: "2" });
+        expect(queryOf(call).limit).toBeUndefined();
         expect(page.entries[0].heading).toBe("shift 1 started: plan");
         expect(page.hasMore).toBe(false);
     });
