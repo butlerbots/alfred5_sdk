@@ -36,6 +36,7 @@ function delivery(overrides: Partial<Delivery> = {}): Delivery {
         surfaces: [{ surface: "discord", status: "sent", channelId: "DM", messageId: "m1", attempts: 1, lastAt: 1700000000000 }],
         answered: null,
         closed: null,
+        source: "shift",
         created: 1699999000000,
         ...overrides,
     };
