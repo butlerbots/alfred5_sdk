@@ -251,3 +251,32 @@ export type JobSettingsResponse = {
     success: true;
     jobs: JobSettings;
 };
+
+/**
+ * Why a resume answered as it did.
+ *
+ * `resumed` is the job queued again; the rest are why it was left where it is — the owner's
+ * tier does not allow the job to run, today's allowance is spent, or the server refused for a
+ * reason of its own.
+ */
+export type JobResumeReason = "resumed" | "over_tier_limit" | "allowance_spent" | "refused";
+
+/** What the user can do about a job that was not resumed. */
+export type JobResumeAction = "raise_allowance" | "upgrade_tier" | "wait";
+
+/**
+ * A job after a resume was asked for.
+ *
+ * `resumed` says whether it is queued again; when it is not, `reason` and `action` say why and
+ * what would change it, and `wakeAt` is the earliest the runner would pick it up on its own,
+ * in epoch milliseconds. `message` is the same thing in a sentence or two, ready to show.
+ */
+export type JobResumeResponse = {
+    success: true;
+    resumed: boolean;
+    reason: JobResumeReason;
+    action?: JobResumeAction;
+    wakeAt?: number;
+    message: string;
+    job: JobView;
+};

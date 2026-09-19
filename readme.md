@@ -335,6 +335,7 @@ const { entries, hasMore } = await client.getJobJournal({ jobId, page: 2 });
 await client.updateJob({ jobId, title: "Flat hunt", autonomy: "free", autonomyUntil: Date.now() + 86_400_000, capUsd: 5 });
 await client.setPhaseModel({ jobId, phaseId: "search", model: "Butler-Auto-Smart" });
 await client.cancelJob({ jobId });
+const { resumed, reason, action, message } = await client.resumeJob({ jobId });
 ```
 
 `getJob` carries the newest page of the journal and `journalTotal`; `getJobJournal` pages the rest,
@@ -343,6 +344,10 @@ an older page exists. Each entry says which shift wrote it (`shiftIndex`, `shift
 model. A job's `title` is a few words of its own, set at start or renamed with `updateJob`, which
 also takes `capUsd`, a ceiling on what the job may spend in all (null clears it). `setPhaseModel`
 changes the model a phase that has not started runs on, to one of the detail's `phaseModels`.
+`resumeJob` continues a job parked as `waiting_budget` when there is room for it again: it answers
+with `resumed`, a `reason` of `resumed`, `over_tier_limit`, `allowance_spent` or `refused`, an
+`action` of `raise_allowance`, `upgrade_tier` or `wait` when there is one, a `wakeAt` when the job
+would carry on by itself, and a `message` written for the user. A job in any other status is a 409.
 
 Paging is 1-based, and every listing answers with `page`, `limit` and `total`. A listing also
 carries `allowance` — what this user's jobs may spend today and what is left of it, or
