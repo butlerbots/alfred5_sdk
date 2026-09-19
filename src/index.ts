@@ -133,7 +133,7 @@ export class ButlerBotClient {
         return resumeJob(this.forRequest(config));
     }
 
-    /** Changes one job's name, and its autonomy: how far it may act, until when, and what it always asks about */
+    /** Changes one job's name, the model it runs on, its spending cap and its autonomy: how far it may act, until when, and what it always asks about */
     updateJob(config: OptionalApiKey<UpdateJobOptions>) {
         return updateJob(this.forRequest(config));
     }

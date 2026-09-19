@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { ButlerBotClient, ButlerBotAPIError } from "../index";
 import { CONFIG } from "../config";
 import { answerDelivery, listDeliveries } from "../modules/outreach";
-import type { Delivery } from "../types/outreach";
+import { isDeliveryOpen, type Delivery } from "../types/outreach";
 import { fakeFetch, pathOf, queryOf, type FakeFetch } from "./support/fake_fetch";
 
 // =============================================
@@ -35,6 +35,7 @@ function delivery(overrides: Partial<Delivery> = {}): Delivery {
         message: "Which of these two flats should I book a viewing for?",
         surfaces: [{ surface: "discord", status: "sent", channelId: "DM", messageId: "m1", attempts: 1, lastAt: 1700000000000 }],
         answered: null,
+        closed: null,
         created: 1699999000000,
         ...overrides,
     };
@@ -62,6 +63,28 @@ describe("Listing deliveries", () => {
 
         expect(queryOf(http.only())).toEqual({ api_key: KEY });
         expect(pathOf(http.only())).toBe(`${CONFIG.server}${CONFIG.paths.outreach.base}`);
+    });
+});
+
+describe("Whether a delivery is open", () => {
+    it("reads an unanswered question as open", () => {
+        expect(isDeliveryOpen(delivery())).toBe(true);
+    });
+
+    it("reads one that was answered as closed", () => {
+        expect(isDeliveryOpen(delivery({ answered: { at: 1700000100000, text: "The one in Gardens", via: "web" } }))).toBe(false);
+    });
+
+    it("reads one closed under it as no longer open", () => {
+        // The job that asked ended first, so nobody will ever answer it: it is not outstanding,
+        // and the server refuses an answer to it.
+        const abandoned = delivery({ closed: { at: 1700000200000, reason: "job_cancelled" } });
+
+        expect(isDeliveryOpen(abandoned)).toBe(false);
+    });
+
+    it("reads an update as never having been open", () => {
+        expect(isDeliveryOpen(delivery({ intent: "update" }))).toBe(false);
     });
 });
 

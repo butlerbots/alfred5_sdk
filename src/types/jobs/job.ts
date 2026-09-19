@@ -71,6 +71,13 @@ export type JobView = {
     journalCardUri: string | null;
     /** The chat the job was asked for in, and where it reports back. */
     originConversationId: string | null;
+    /**
+     * The model or alias the user asked the whole job to run on, and the plan's default.
+     *
+     * Null when nobody chose one, in which case the planner picks a model per phase. A phase's
+     * own `model` is what that phase actually runs on either way.
+     */
+    model: string | null;
     /** What was chosen for this job, or null when nothing was. */
     autonomy: JobAutonomy | null;
     /** When `autonomy` lapses back to asking, in UTC milliseconds. */

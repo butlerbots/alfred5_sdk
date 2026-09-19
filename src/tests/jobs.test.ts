@@ -45,6 +45,7 @@ function job(overrides: Partial<JobView> = {}): JobView {
         planCardUri: "card://workspace/jobs/job_1/plan.md",
         journalCardUri: "card://workspace/jobs/job_1/journal.md",
         originConversationId: "convo_1",
+        model: null,
         autonomy: null,
         autonomyUntil: null,
         alwaysAsk: [],
@@ -266,6 +267,24 @@ describe("Updating a job", () => {
 
         // Null is a value here - it clears the cap - so it is sent, unlike a field left out.
         expect(http.only().body).toEqual({ capUsd: null });
+    });
+
+    it("sets and clears the job's own model with the same patch", async () => {
+        http = fakeFetch({ body: { success: true, job: job({ model: "Butler-Auto-Smart" }), autonomyLine: "Asks before acting outward." } });
+
+        const updated = await updateJob({ apiKey: KEY, serverURL: "https://core.test", jobId: "job_1", model: "Butler-Auto-Smart" });
+
+        expect(http.only().body).toEqual({ model: "Butler-Auto-Smart" });
+        expect(updated.job.model).toBe("Butler-Auto-Smart");
+    });
+
+    it("clears the job's model rather than leaving it alone", async () => {
+        http = fakeFetch({ body: { success: true, job: job({ model: null }), autonomyLine: "Asks before acting outward." } });
+
+        await updateJob({ apiKey: KEY, serverURL: "https://core.test", jobId: "job_1", model: null });
+
+        // Null is a value here - the planner picks per phase again - so it is sent.
+        expect(http.only().body).toEqual({ model: null });
     });
 
     it("sets a phase's model on the plan's own path", async () => {

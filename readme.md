@@ -342,8 +342,11 @@ const { resumed, reason, action, message } = await client.resumeJob({ jobId });
 newest page first, with each page in the order its entries were written and `hasMore` saying whether
 an older page exists. Each entry says which shift wrote it (`shiftIndex`, `shiftKind`) and on which
 model. A job's `title` is a few words of its own, set at start or renamed with `updateJob`, which
-also takes `capUsd`, a ceiling on what the job may spend in all (null clears it). `setPhaseModel`
-changes the model a phase that has not started runs on, to one of the detail's `phaseModels`.
+also takes `capUsd`, a ceiling on what the job may spend in all (null clears it), and `model`, the
+model or alias the whole job runs on and the plan's default — a name sets it, null clears it and
+leaves the planner to pick per phase, and a job's own `model` reads back the same way.
+`setPhaseModel` changes the model one phase that has not started runs on, to one of the detail's
+`phaseModels`.
 `resumeJob` continues a job parked as `waiting_budget` when there is room for it again: it answers
 with `resumed`, a `reason` of `resumed`, `over_tier_limit`, `allowance_spent` or `refused`, an
 `action` of `raise_allowance`, `upgrade_tier` or `wait` when there is one, a `wakeAt` when the job
@@ -377,6 +380,10 @@ const { delivery, job } = await client.answerDelivery({ deliveryId, text: "The o
 Answering closes the delivery, and when it belongs to a job the answer is put on that job's
 inbox, which wakes a job that was parked waiting for it — `job.delivered` says what became of
 it. An approval takes `decision: "approve" | "deny"` alongside the text.
+
+A delivery whose job ended before anyone answered is closed instead: `closed` carries the time
+and a reason of `job_done`, `job_failed` or `job_cancelled`. `isDeliveryOpen` reads false for
+one, and answering it is refused with a 409 just as one already answered is.
 
 ### When a call fails
 
