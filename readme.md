@@ -329,11 +329,17 @@ a plan it writes. The client reads them and steers them; it does not run them.
 
 ```typescript
 const { jobs, allowance, spentTodayUsd } = await client.listJobs({ status: "running", page: 1, limit: 20 });
-const { job, plan, journal, openDeliveries, autonomyLine } = await client.getJob({ jobId });
+const { job, plan, journal, journalTotal, openDeliveries, autonomyLine } = await client.getJob({ jobId });
+const { entries, hasMore } = await client.getJobJournal({ jobId, page: 2 });
 
-await client.updateJob({ jobId, autonomy: "free", autonomyUntil: Date.now() + 86_400_000 });
+await client.updateJob({ jobId, title: "Flat hunt", autonomy: "free", autonomyUntil: Date.now() + 86_400_000 });
 await client.cancelJob({ jobId });
 ```
+
+`getJob` carries the newest page of the journal and `journalTotal`; `getJobJournal` pages the rest,
+newest page first, with each page in the order its entries were written and `hasMore` saying whether
+an older page exists. Each entry says which shift wrote it (`shiftIndex`, `shiftKind`) and on which
+model. A job's `title` is a few words of its own, set at start or renamed with `updateJob`.
 
 Paging is 1-based, and every listing answers with `page`, `limit` and `total`. A listing also
 carries `allowance` — what this user's jobs may spend today and what is left of it, or

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 
 import { ButlerBotClient, ButlerBotAPIError } from "../index";
 import { CONFIG } from "../config";
-import { cancelJob, getJob, listJobs, updateJob, updateJobSettings } from "../modules/jobs";
+import { cancelJob, getJob, getJobJournal, listJobs, updateJob, updateJobSettings } from "../modules/jobs";
 import type { JobView } from "../types/jobs";
 import { fakeFetch, pathOf, queryOf, type FakeFetch } from "./support/fake_fetch";
 
@@ -95,7 +95,8 @@ describe("Reading one job", () => {
                 job: job(),
                 autonomyLine: "Asks before acting outward.",
                 plan: { ok: true, raw: "# Plan", phases: [{ id: "search", kind: "work", model: "sonnet", status: "running" }] },
-                journal: [{ at: 1700000000000, kind: "handover", body: "Read 20 listings" }],
+                journal: [{ at: 1700000000000, author: "model", shiftIndex: 3, shiftKind: "work", model: "claude-opus-5", heading: "handover: continue", text: "Read 20 listings" }],
+                journalTotal: 41,
                 openDeliveries: [],
             },
         });
@@ -106,7 +107,23 @@ describe("Reading one job", () => {
         expect(detail.autonomyLine).toBe("Asks before acting outward.");
         expect(detail.plan.ok).toBe(true);
         if (detail.plan.ok) expect(detail.plan.phases[0].id).toBe("search");
-        expect(detail.journal[0].body).toBe("Read 20 listings");
+        expect(detail.journal[0].text).toBe("Read 20 listings");
+        expect(detail.journal[0].shiftKind).toBe("work");
+        expect(detail.journalTotal).toBe(41);
+    });
+
+    it("pages the journal from the job's journal path, newest page first", async () => {
+        http = fakeFetch({ body: { success: true, entries: [{ at: 1, author: "runtime", heading: "shift 1 started: plan", text: "Running on Butler-Auto-Smart." }], page: 2, limit: 30, total: 41, hasMore: false } });
+
+        const page = await getJobJournal({ apiKey: KEY, serverURL: "https://core.test", jobId: "job_1", page: 2 });
+
+        const call = http.only();
+        expect(pathOf(call)).toBe("https://core.test/api/jobs/job_1/journal");
+        // Only the paging that was named goes out: the server's own default limit stands.
+        expect(queryOf(call)).toMatchObject({ page: "2" });
+        expect(queryOf(call).limit).toBeUndefined();
+        expect(page.entries[0].heading).toBe("shift 1 started: plan");
+        expect(page.hasMore).toBe(false);
     });
 
     it("escapes the id rather than pasting it into the path", async () => {
@@ -174,6 +191,15 @@ describe("Updating a job", () => {
         // `alwaysAsk` was not named, so it is not sent: an absent field leaves the job's alone.
         expect(call.body).toEqual({ autonomy: "free", autonomyUntil: null });
         expect(updated.autonomyLine).toBe("Acts freely until Friday.");
+    });
+
+    it("renames a job with the same patch", async () => {
+        http = fakeFetch({ body: { success: true, job: job({ title: "Flat hunt" }), autonomyLine: "Asks before acting outward." } });
+
+        const updated = await updateJob({ apiKey: KEY, serverURL: "https://core.test", jobId: "job_1", title: "Flat hunt" });
+
+        expect(http.only().body).toEqual({ title: "Flat hunt" });
+        expect(updated.job.title).toBe("Flat hunt");
     });
 
     it("carries the server's words when a value is refused", async () => {
