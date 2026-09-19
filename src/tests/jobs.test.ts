@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 
 import { ButlerBotClient, ButlerBotAPIError } from "../index";
 import { CONFIG } from "../config";
-import { cancelJob, getJob, getJobJournal, listJobs, setPhaseModel, updateJob, updateJobSettings } from "../modules/jobs";
+import { cancelJob, getJob, getJobJournal, listJobs, resumeJob, setPhaseModel, updateJob, updateJobSettings } from "../modules/jobs";
 import type { JobView } from "../types/jobs";
 import { fakeFetch, pathOf, queryOf, type FakeFetch } from "./support/fake_fetch";
 
@@ -177,6 +177,70 @@ describe("Cancelling a job", () => {
         expect(failure.isNotFound).toBe(false);
         // The refusal still carries the job, so a caller can show what it settled as.
         expect((failure.body as { job: JobView }).job.status).toBe("done");
+    });
+});
+
+describe("Resuming a job", () => {
+    it("posts to the job's resume path with no body", async () => {
+        http = fakeFetch({
+            body: {
+                success: true,
+                resumed: true,
+                reason: "resumed",
+                message: "There is room in today's allowance again, so the job is queued.",
+                job: job({ status: "queued" }),
+            },
+        });
+
+        const resumed = await resumeJob({ apiKey: KEY, serverURL: "https://core.test", jobId: "job_1" });
+
+        const call = http.only();
+        expect(call.method).toBe("POST");
+        expect(pathOf(call)).toBe("https://core.test/api/jobs/job_1/resume");
+        expect(queryOf(call)).toMatchObject({ api_key: KEY });
+        expect(call.body).toBeUndefined();
+        expect(resumed.resumed).toBe(true);
+        expect(resumed.reason).toBe("resumed");
+        expect(resumed.job.status).toBe("queued");
+    });
+
+    it("hands back the refusal and what would change it when there is still no room", async () => {
+        // Not an error: the server answered with a success, and said why the job stayed parked.
+        http = fakeFetch({
+            body: {
+                success: true,
+                resumed: false,
+                reason: "allowance_spent",
+                action: "raise_allowance",
+                wakeAt: 1700086400000,
+                message: "Today's job allowance is spent. Raise it, or the job carries on tomorrow.",
+                job: job({ status: "waiting_budget" }),
+            },
+        });
+
+        const answer = await resumeJob({ apiKey: KEY, jobId: "job_1" });
+
+        expect(answer.resumed).toBe(false);
+        expect(answer.reason).toBe("allowance_spent");
+        expect(answer.action).toBe("raise_allowance");
+        expect(answer.wakeAt).toBe(1700086400000);
+        expect(answer.job.status).toBe("waiting_budget");
+    });
+
+    it("tells a job that was never waiting for budget apart from one that is missing", async () => {
+        http = fakeFetch({
+            status: 409,
+            statusText: "Conflict",
+            body: { success: false, error: "Not parked", errormessage: "Job job_1 is running", job: job({ status: "running" }) },
+        });
+
+        const failure = await resumeJob({ apiKey: KEY, jobId: "job_1" }).catch(error => error);
+
+        expect(failure).toBeInstanceOf(ButlerBotAPIError);
+        expect(failure.isConflict).toBe(true);
+        expect(failure.isNotFound).toBe(false);
+        // The refusal still carries the job, so a caller can show where it actually is.
+        expect((failure.body as { job: JobView }).job.status).toBe("running");
     });
 });
 

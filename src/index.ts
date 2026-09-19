@@ -7,6 +7,7 @@ import {
     getJob,
     getJobJournal,
     listJobs,
+    resumeJob,
     setPhaseModel,
     updateJob,
     updateJobSettings,
@@ -15,6 +16,7 @@ import {
     type GetJobOptions,
     type SetPhaseModelOptions,
     type ListJobsOptions,
+    type ResumeJobOptions,
     type UpdateJobOptions,
     type UpdateJobSettingsOptions,
 } from "./modules/jobs";
@@ -126,6 +128,11 @@ export class ButlerBotClient {
         return cancelJob(this.forRequest(config));
     }
 
+    /** Continues a job parked waiting for budget. Throws a `ButlerBotAPIError` with `isConflict` when it is in any other status */
+    resumeJob(config: OptionalApiKey<ResumeJobOptions>) {
+        return resumeJob(this.forRequest(config));
+    }
+
     /** Changes one job's name, and its autonomy: how far it may act, until when, and what it always asks about */
     updateJob(config: OptionalApiKey<UpdateJobOptions>) {
         return updateJob(this.forRequest(config));
@@ -170,12 +177,13 @@ export type {
     TransportHandlers,
 } from "./modules/transport";
 export { ButlerBotAPIError } from "./util/api_error";
-export { listJobs, getJob, cancelJob, updateJob, updateJobSettings } from "./modules/jobs";
+export { listJobs, getJob, cancelJob, resumeJob, updateJob, updateJobSettings } from "./modules/jobs";
 export type {
     JobsRequestOptions,
     ListJobsOptions,
     GetJobOptions,
     CancelJobOptions,
+    ResumeJobOptions,
     UpdateJobOptions,
     UpdateJobSettingsOptions,
 } from "./modules/jobs";

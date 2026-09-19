@@ -6,6 +6,7 @@ import type {
     JobJournalPage,
     JobListResponse,
     JobPhaseModelResponse,
+    JobResumeResponse,
     JobSettingsResponse,
     JobSettingsUpdate,
     JobStatus,
@@ -43,6 +44,8 @@ export type GetJobJournalOptions = JobsRequestOptions & {
 };
 
 export type CancelJobOptions = JobsRequestOptions & { jobId: string };
+
+export type ResumeJobOptions = JobsRequestOptions & { jobId: string };
 
 export type UpdateJobOptions = JobsRequestOptions & {
     jobId: string;
@@ -133,6 +136,24 @@ export async function cancelJob(options: CancelJobOptions): Promise<JobCancelRes
     );
 
     return requestAPI<JobCancelResponse>({ url, method: "POST", action: `cancel job ${options.jobId}` });
+}
+
+/**
+ * Continues a job that is parked waiting for budget, when there is room for it again.
+ *
+ * The answer says what happened either way: `resumed` is the job queued again, and otherwise
+ * `reason`, `action` and `message` say why it is still parked and what would change that. A
+ * job in any other status is a 409: the call throws a `ButlerBotAPIError` whose `isConflict`
+ * is true and whose `body` still carries the job as it stands.
+ */
+export async function resumeJob(options: ResumeJobOptions): Promise<JobResumeResponse> {
+    const url = formatURL(
+        `${jobsBase(options)}/${encodeURIComponent(options.jobId)}/resume`,
+        {},
+        { apiKey: options.apiKey, debug: options.debug },
+    );
+
+    return requestAPI<JobResumeResponse>({ url, method: "POST", action: `resume job ${options.jobId}` });
 }
 
 /** Changes one job's name, and its autonomy: how far it may act, until when, and what it always asks about. */

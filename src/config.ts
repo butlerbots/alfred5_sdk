@@ -48,7 +48,7 @@ export const CONFIG = {
             }
         },
         jobs: {
-            /** The collection. One job is `${base}/${jobId}`, its cancel `${base}/${jobId}/cancel`. */
+            /** The collection. One job is `${base}/${jobId}`, its cancel `${base}/${jobId}/cancel` and its resume `${base}/${jobId}/resume`. */
             base: "/api/jobs",
             /** The owner's job settings, which live on the user rather than on a job. */
             settings: "/api/user/jobs-settings",
