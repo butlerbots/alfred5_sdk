@@ -59,6 +59,13 @@ export type UpdateJobOptions = JobsRequestOptions & {
     alwaysAsk?: string[];
     /** A ceiling on what the job may spend in all, in dollars. Null clears it. */
     capUsd?: number | null;
+    /**
+     * The model or alias the whole job runs on, and the plan's default.
+     *
+     * A name sets it; null clears it, leaving the planner to pick a model per phase. One
+     * phase's model on its own is `setPhaseModel`.
+     */
+    model?: string | null;
 };
 
 export type SetPhaseModelOptions = JobsRequestOptions & {
@@ -156,7 +163,7 @@ export async function resumeJob(options: ResumeJobOptions): Promise<JobResumeRes
     return requestAPI<JobResumeResponse>({ url, method: "POST", action: `resume job ${options.jobId}` });
 }
 
-/** Changes one job's name, and its autonomy: how far it may act, until when, and what it always asks about. */
+/** Changes one job's name, the model it runs on, its spending cap and its autonomy: how far it may act, until when, and what it always asks about. */
 export async function updateJob(options: UpdateJobOptions): Promise<JobUpdateResponse> {
     const url = formatURL(
         `${jobsBase(options)}/${encodeURIComponent(options.jobId)}`,
@@ -167,7 +174,7 @@ export async function updateJob(options: UpdateJobOptions): Promise<JobUpdateRes
     return requestAPI<JobUpdateResponse>({
         url,
         method: "PATCH",
-        body: body({ title: options.title, autonomy: options.autonomy, autonomyUntil: options.autonomyUntil, alwaysAsk: options.alwaysAsk, capUsd: options.capUsd }),
+        body: body({ title: options.title, autonomy: options.autonomy, autonomyUntil: options.autonomyUntil, alwaysAsk: options.alwaysAsk, capUsd: options.capUsd, model: options.model }),
         action: `update job ${options.jobId}`,
     });
 }

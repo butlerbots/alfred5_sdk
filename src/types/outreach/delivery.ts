@@ -42,6 +42,17 @@ export const DELIVERY_ANSWER_VIA = ["web", "discord", "chat", "tool"] as const;
 /** Which surface the answer came back on. */
 export type DeliveryAnsweredVia = typeof DELIVERY_ANSWER_VIA[number];
 
+export const DELIVERY_CLOSED_REASONS = ["job_done", "job_failed", "job_cancelled"] as const;
+
+/** Why a delivery was closed with nobody having answered it: what became of the job that asked. */
+export type DeliveryClosedReason = typeof DELIVERY_CLOSED_REASONS[number];
+
+/** A delivery closed unanswered, and when. */
+export type DeliveryClosed = {
+    at: number;
+    reason: DeliveryClosedReason;
+};
+
 export type DeliveryAnswer = {
     at: number;
     text: string;
@@ -66,12 +77,19 @@ export type Delivery = {
     surfaces: DeliverySurface[];
     /** Null until somebody answers. Only ever set once. */
     answered: DeliveryAnswer | null;
+    /**
+     * Set when the job this belonged to ended before anyone answered, and null otherwise.
+     *
+     * A closed delivery is no longer open, and answering it is refused: the server answers a
+     * 409 the same way it does one already answered.
+     */
+    closed: DeliveryClosed | null;
     created: number;
 };
 
-/** Whether a delivery is still waiting on the user. */
+/** Whether a delivery is still waiting on the user: unanswered, and not closed under it. */
 export function isDeliveryOpen(delivery: Delivery): boolean {
-    return ANSWERABLE_DELIVERY_INTENTS.includes(delivery.intent) && !delivery.answered;
+    return ANSWERABLE_DELIVERY_INTENTS.includes(delivery.intent) && !delivery.answered && !delivery.closed;
 }
 
 export type DeliveryListResponse = {
