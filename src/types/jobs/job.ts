@@ -134,14 +134,20 @@ export type JobPlanRead =
 /**
  * One line of a job's journal.
  *
- * Loosely typed on purpose: the journal is a card the model writes as well as the runtime, and
- * a reader that dropped the keys it did not know would hide exactly the entries worth reading.
+ * The index signature is there on purpose: the journal is a card the model writes as well as
+ * the runtime, and a reader that dropped the keys it did not know would hide exactly the
+ * entries worth reading.
  */
 export type JobJournalEntry = {
+    /** When it was written, in epoch milliseconds. */
     at: number;
-    kind?: string;
-    title?: string;
-    body?: string;
+    /** Who wrote it: the runtime's own bookkeeping, or the model working the shift. */
+    author: "runtime" | "model";
+    /** The shift the entry belongs to, 1-based. Absent for anything written between shifts. */
+    shiftIndex?: number | null;
+    /** A few words naming what this entry is: "shift start", "phase done", "handover: continue". */
+    heading: string;
+    text: string;
     [key: string]: unknown;
 };
 
