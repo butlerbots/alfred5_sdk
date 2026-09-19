@@ -53,6 +53,15 @@ export type DeliveryClosed = {
     reason: DeliveryClosedReason;
 };
 
+export const DELIVERY_SOURCES = ["shift", "runtime", "gate"] as const;
+
+/**
+ * Who wrote the delivery: a job shift asking with `reach_user`, the runtime telling the user
+ * where a job stands, or the autonomy gate asking for an approval. Only a shift's own ask
+ * holds a finished job open until it is answered.
+ */
+export type DeliverySource = typeof DELIVERY_SOURCES[number];
+
 export type DeliveryAnswer = {
     at: number;
     text: string;
@@ -84,6 +93,8 @@ export type Delivery = {
      * 409 the same way it does one already answered.
      */
     closed: DeliveryClosed | null;
+    /** Who wrote it. Rows from before this was recorded read as `runtime`. */
+    source: DeliverySource;
     created: number;
 };
 

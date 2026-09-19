@@ -383,7 +383,9 @@ it. An approval takes `decision: "approve" | "deny"` alongside the text.
 
 A delivery whose job ended before anyone answered is closed instead: `closed` carries the time
 and a reason of `job_done`, `job_failed` or `job_cancelled`. `isDeliveryOpen` reads false for
-one, and answering it is refused with a 409 just as one already answered is.
+one, and answering it is refused with a 409 just as one already answered is. `source` says who
+wrote a delivery: `shift` for a question a job's shift asked, `runtime` for the job's own
+status tells, `gate` for an approval the autonomy gate asked for.
 
 ### When a call fails
 
