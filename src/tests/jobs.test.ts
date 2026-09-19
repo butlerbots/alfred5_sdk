@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 
 import { ButlerBotClient, ButlerBotAPIError } from "../index";
 import { CONFIG } from "../config";
-import { cancelJob, getJob, getJobJournal, listJobs, updateJob, updateJobSettings } from "../modules/jobs";
+import { cancelJob, getJob, getJobJournal, listJobs, setPhaseModel, updateJob, updateJobSettings } from "../modules/jobs";
 import type { JobView } from "../types/jobs";
 import { fakeFetch, pathOf, queryOf, type FakeFetch } from "./support/fake_fetch";
 
@@ -36,6 +36,7 @@ function job(overrides: Partial<JobView> = {}): JobView {
         shiftsRun: 3,
         reviewRounds: 0,
         spentUsd: 0.42,
+        capUsd: null,
         spendTodayUsd: 0.12,
         openQuestions: 0,
         lastRunAt: 1700000000000,
@@ -98,6 +99,7 @@ describe("Reading one job", () => {
                 journal: [{ at: 1700000000000, author: "model", shiftIndex: 3, shiftKind: "work", model: "claude-opus-5", heading: "handover: continue", text: "Read 20 listings" }],
                 journalTotal: 41,
                 openDeliveries: [],
+                phaseModels: ["Butler-Auto", "Butler-Auto-Smart"],
             },
         });
 
@@ -191,6 +193,27 @@ describe("Updating a job", () => {
         // `alwaysAsk` was not named, so it is not sent: an absent field leaves the job's alone.
         expect(call.body).toEqual({ autonomy: "free", autonomyUntil: null });
         expect(updated.autonomyLine).toBe("Acts freely until Friday.");
+    });
+
+    it("sets and clears a spending cap with the same patch", async () => {
+        http = fakeFetch({ body: { success: true, job: job({ capUsd: null }), autonomyLine: "Asks before acting outward." } });
+
+        await updateJob({ apiKey: KEY, serverURL: "https://core.test", jobId: "job_1", capUsd: null });
+
+        // Null is a value here - it clears the cap - so it is sent, unlike a field left out.
+        expect(http.only().body).toEqual({ capUsd: null });
+    });
+
+    it("sets a phase's model on the plan's own path", async () => {
+        http = fakeFetch({ body: { success: true, phase: { id: "search", kind: "work", model: "Butler-Auto-Smart", status: "pending" } } });
+
+        const changed = await setPhaseModel({ apiKey: KEY, serverURL: "https://core.test", jobId: "job_1", phaseId: "search", model: "Butler-Auto-Smart" });
+
+        const call = http.only();
+        expect(call.method).toBe("PATCH");
+        expect(pathOf(call)).toBe("https://core.test/api/jobs/job_1/plan/search");
+        expect(call.body).toEqual({ model: "Butler-Auto-Smart" });
+        expect(changed.phase.model).toBe("Butler-Auto-Smart");
     });
 
     it("renames a job with the same patch", async () => {

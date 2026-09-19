@@ -7,11 +7,13 @@ import {
     getJob,
     getJobJournal,
     listJobs,
+    setPhaseModel,
     updateJob,
     updateJobSettings,
     type CancelJobOptions,
     type GetJobJournalOptions,
     type GetJobOptions,
+    type SetPhaseModelOptions,
     type ListJobsOptions,
     type UpdateJobOptions,
     type UpdateJobSettingsOptions,
@@ -127,6 +129,11 @@ export class ButlerBotClient {
     /** Changes one job's name, and its autonomy: how far it may act, until when, and what it always asks about */
     updateJob(config: OptionalApiKey<UpdateJobOptions>) {
         return updateJob(this.forRequest(config));
+    }
+
+    /** Changes the model one phase of a job's plan runs on; only a phase that has not started */
+    setPhaseModel(config: OptionalApiKey<SetPhaseModelOptions>) {
+        return setPhaseModel(this.forRequest(config));
     }
 
     /** Changes this user's job settings: their daily allowance and what new jobs start with */

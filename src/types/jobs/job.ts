@@ -50,6 +50,13 @@ export type JobView = {
     reviewRounds: number;
     /** What the job has spent in total, in USD. */
     spentUsd: number;
+    /**
+     * A ceiling on what this job may spend over its whole life, in dollars, or null for none.
+     *
+     * Measured against everything the job and its sub-jobs have spent. A job that reaches it
+     * with work left parks blocked and asks; raising it starts the job again.
+     */
+    capUsd: number | null;
     /** What the job has spent today, in USD. */
     spendTodayUsd: number;
     /** How many questions of this job's are waiting on the user. */
@@ -99,7 +106,7 @@ export function isJobAllowanceRefused(allowance: JobAllowance): allowance is Job
     return allowance.source === null;
 }
 
-export type JobPlanPhaseKind = "plan" | "work" | "review";
+export type JobPlanPhaseKind = "plan" | "work" | "map" | "review";
 export type JobPlanPhaseStatus = "pending" | "running" | "blocked" | "done";
 
 /** One phase of a job's plan, as the plan card spells it out. */
@@ -208,6 +215,14 @@ export type JobDetailResponse = {
     journalTotal: number;
     /** Questions of this job's nobody has answered yet. */
     openDeliveries: Delivery[];
+    /** The model names a phase of this job may be set to: the aliases first, then the tier's models. */
+    phaseModels: string[];
+};
+
+/** A phase after its model was changed. */
+export type JobPhaseModelResponse = {
+    success: true;
+    phase: JobPlanPhase;
 };
 
 /** One page of a job's journal. Page 1 is the newest; within a page the entries are in written order. */
