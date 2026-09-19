@@ -5,10 +5,12 @@ import { getUsagePolicyData, UsagePolicyDataOptions } from "./modules/usage";
 import {
     cancelJob,
     getJob,
+    getJobJournal,
     listJobs,
     updateJob,
     updateJobSettings,
     type CancelJobOptions,
+    type GetJobJournalOptions,
     type GetJobOptions,
     type ListJobsOptions,
     type UpdateJobOptions,
@@ -112,12 +114,17 @@ export class ButlerBotClient {
         return getJob(this.forRequest(config));
     }
 
+    /** A page of one job's journal, newest page first */
+    getJobJournal(config: OptionalApiKey<GetJobJournalOptions>) {
+        return getJobJournal(this.forRequest(config));
+    }
+
     /** Stops a job. Throws a `ButlerBotAPIError` with `isConflict` when it had already finished */
     cancelJob(config: OptionalApiKey<CancelJobOptions>) {
         return cancelJob(this.forRequest(config));
     }
 
-    /** Changes one job's autonomy: how far it may act, until when, and what it always asks about */
+    /** Changes one job's name, and its autonomy: how far it may act, until when, and what it always asks about */
     updateJob(config: OptionalApiKey<UpdateJobOptions>) {
         return updateJob(this.forRequest(config));
     }

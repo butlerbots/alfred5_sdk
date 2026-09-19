@@ -3,6 +3,7 @@ import type {
     JobAutonomy,
     JobCancelResponse,
     JobDetailResponse,
+    JobJournalPage,
     JobListResponse,
     JobSettingsResponse,
     JobSettingsUpdate,
@@ -32,10 +33,20 @@ export type ListJobsOptions = JobsRequestOptions & {
 
 export type GetJobOptions = JobsRequestOptions & { jobId: string };
 
+export type GetJobJournalOptions = JobsRequestOptions & {
+    jobId: string;
+    /** 1-based, newest page first. The first page when it is not given. */
+    page?: number;
+    /** How many entries per page; the server caps it. */
+    limit?: number;
+};
+
 export type CancelJobOptions = JobsRequestOptions & { jobId: string };
 
 export type UpdateJobOptions = JobsRequestOptions & {
     jobId: string;
+    /** A new short name for the job, a few words at most. */
+    title?: string;
     /** How far this job may act outward on its own. */
     autonomy?: JobAutonomy;
     /** When that autonomy lapses back to asking. Null clears it. */
@@ -86,6 +97,17 @@ export async function getJob(options: GetJobOptions): Promise<JobDetailResponse>
     return requestAPI<JobDetailResponse>({ url, action: `read job ${options.jobId}` });
 }
 
+/** A page of one job's journal, newest page first, each page in the order it was written. */
+export async function getJobJournal(options: GetJobJournalOptions): Promise<JobJournalPage> {
+    const url = formatURL(
+        `${jobsBase(options)}/${encodeURIComponent(options.jobId)}/journal`,
+        query({ page: options.page, limit: options.limit }),
+        { apiKey: options.apiKey, debug: options.debug },
+    );
+
+    return requestAPI<JobJournalPage>({ url, action: `read the journal of job ${options.jobId}` });
+}
+
 /**
  * Stops a job.
  *
@@ -102,7 +124,7 @@ export async function cancelJob(options: CancelJobOptions): Promise<JobCancelRes
     return requestAPI<JobCancelResponse>({ url, method: "POST", action: `cancel job ${options.jobId}` });
 }
 
-/** Changes one job's autonomy: how far it may act, until when, and what it always asks about. */
+/** Changes one job's name, and its autonomy: how far it may act, until when, and what it always asks about. */
 export async function updateJob(options: UpdateJobOptions): Promise<JobUpdateResponse> {
     const url = formatURL(
         `${jobsBase(options)}/${encodeURIComponent(options.jobId)}`,
@@ -113,7 +135,7 @@ export async function updateJob(options: UpdateJobOptions): Promise<JobUpdateRes
     return requestAPI<JobUpdateResponse>({
         url,
         method: "PATCH",
-        body: body({ autonomy: options.autonomy, autonomyUntil: options.autonomyUntil, alwaysAsk: options.alwaysAsk }),
+        body: body({ title: options.title, autonomy: options.autonomy, autonomyUntil: options.autonomyUntil, alwaysAsk: options.alwaysAsk }),
         action: `update job ${options.jobId}`,
     });
 }

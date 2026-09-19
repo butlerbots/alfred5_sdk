@@ -138,6 +138,8 @@ export type JobPlanRead =
  * the runtime, and a reader that dropped the keys it did not know would hide exactly the
  * entries worth reading.
  */
+export type JobShiftKind = "plan" | "replan" | "work" | "map" | "escalate" | "review" | "sample";
+
 export type JobJournalEntry = {
     /** When it was written, in epoch milliseconds. */
     at: number;
@@ -145,6 +147,15 @@ export type JobJournalEntry = {
     author: "runtime" | "model";
     /** The shift the entry belongs to, 1-based. Absent for anything written between shifts. */
     shiftIndex?: number | null;
+    /**
+     * What that shift was: a planner, a worker, a reviewer.
+     *
+     * Absent on an entry written between shifts, and on every entry of a job that ran before
+     * a shift's kind was recorded.
+     */
+    shiftKind?: JobShiftKind | null;
+    /** The AI model that shift was running on. Absent for the same two reasons the kind is. */
+    model?: string | null;
     /** A few words naming what this entry is: "shift start", "phase done", "handover: continue". */
     heading: string;
     text: string;
@@ -191,9 +202,23 @@ export type JobDetailResponse = {
     /** The job's autonomy in a sentence, ready to show. */
     autonomyLine: string;
     plan: JobPlanRead;
+    /** The newest page of the journal, in the order its entries were written. The rest is `getJobJournal`. */
     journal: JobJournalEntry[];
+    /** How many entries the journal holds in all. */
+    journalTotal: number;
     /** Questions of this job's nobody has answered yet. */
     openDeliveries: Delivery[];
+};
+
+/** One page of a job's journal. Page 1 is the newest; within a page the entries are in written order. */
+export type JobJournalPage = {
+    success: true;
+    entries: JobJournalEntry[];
+    page: number;
+    limit: number;
+    total: number;
+    /** Whether an older page exists. */
+    hasMore: boolean;
 };
 
 export type JobCancelResponse = {

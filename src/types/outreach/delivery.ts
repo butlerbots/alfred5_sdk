@@ -59,6 +59,9 @@ export type Delivery = {
     /** The job this is about, when it is about one. */
     jobId: string | null;
     intent: DeliveryIntent;
+    /** What the caller had to say, as they said it: ids, figures, outcomes. */
+    facts: string;
+    /** What the user reads: the persona's telling of the facts, or the facts themselves. */
     message: string;
     surfaces: DeliverySurface[];
     /** Null until somebody answers. Only ever set once. */
