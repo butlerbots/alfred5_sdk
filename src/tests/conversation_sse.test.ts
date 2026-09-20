@@ -74,7 +74,7 @@ describe("Conversations over SSE", () => {
         try {
             const convo = new Conversation({ apiKey: "ap-abc_123", serverUrl: url, convoPath: "/chat" });
             convo.setModel("GPT-5").setPlatform("tests")
-                .setAddress({ platform: "discord", channelId: "channel-7", threadId: "thread-3" });
+                .setAddress({ platform: "discord", channelId: "channel-7", threadId: "thread-3", messageId: "msg-11" });
 
             await new Promise<void>((resolve) => {
                 convo.send("hello there", (chunk) => { if ((chunk as Payload).data.quitStream) resolve(); });
@@ -88,6 +88,7 @@ describe("Conversations over SSE", () => {
                 platform: "discord",
                 channelId: "channel-7",
                 threadId: "thread-3",
+                messageId: "msg-11",
             });
             expect(query.get("api_key")).toBe("ap-abc_123");
         } finally {
@@ -118,11 +119,12 @@ describe("Conversations over SSE", () => {
     it("replaces the address whole rather than merging into it", async () => {
         // A conversation that moved out of a thread must stop naming the thread it was in,
         // which is what "whole" buys: the parts of the old address do not survive the new one.
+        // The same holds for the message it was last held at, which a client re-sends per turn.
         const { server, requests, url } = sseServer([completion()]);
 
         try {
             const convo = new Conversation({ apiKey: "ap-abc_123", serverUrl: url, convoPath: "/chat" });
-            convo.setAddress({ platform: "discord", channelId: "channel-7", threadId: "thread-3" });
+            convo.setAddress({ platform: "discord", channelId: "channel-7", threadId: "thread-3", messageId: "msg-11" });
             convo.setAddress({ platform: "discord", channelId: "channel-7" });
 
             await new Promise<void>((resolve) => {

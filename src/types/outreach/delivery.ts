@@ -1,3 +1,4 @@
+import type { ConversationAddress } from "../conversation/address";
 /**
  * Outreach: what Alfred has told or asked this user outside a chat, and their answers.
  *
@@ -26,8 +27,13 @@ export type DeliverySurfaceStatus = typeof DELIVERY_SURFACE_STATUSES[number];
 export type DeliverySurface = {
     surface: DeliverySurfaceName;
     status: DeliverySurfaceStatus;
-    /** Where on the surface it went: a Discord channel id, or "DM". */
-    channelId?: string | null;
+    /**
+     * Where on the surface it was addressed, whole, as the conversation named it.
+     *
+     * Null when the conversation named none, in which case it went wherever the surface
+     * reaches its user by default: on Discord, their direct messages.
+     */
+    address?: ConversationAddress | null;
     /** What the channel called the message it sent. */
     messageId?: string | null;
     /** Why the last attempt failed. */
