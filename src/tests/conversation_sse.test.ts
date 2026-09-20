@@ -73,7 +73,8 @@ describe("Conversations over SSE", () => {
 
         try {
             const convo = new Conversation({ apiKey: "ap-abc_123", serverUrl: url, convoPath: "/chat" });
-            convo.setModel("GPT-5").setPlatform("tests").setChannel("channel-7");
+            convo.setModel("GPT-5").setPlatform("tests")
+                .setAddress({ platform: "discord", channelId: "channel-7", threadId: "thread-3" });
 
             await new Promise<void>((resolve) => {
                 convo.send("hello there", (chunk) => { if ((chunk as Payload).data.quitStream) resolve(); });
@@ -83,16 +84,20 @@ describe("Conversations over SSE", () => {
             expect(query.get("message")).toBe("hello there");
             expect(query.get("model")).toBe("GPT-5");
             expect(query.get("platform")).toBe("tests");
-            expect(query.get("channel")).toBe("channel-7");
+            expect(JSON.parse(query.get("address")!)).toEqual({
+                platform: "discord",
+                channelId: "channel-7",
+                threadId: "thread-3",
+            });
             expect(query.get("api_key")).toBe("ap-abc_123");
         } finally {
             server.stop(true);
         }
     });
 
-    it("leaves the channel out when the conversation has none", async () => {
-        // A conversation that never says where it is must not claim a channel: the server
-        // reads the absence as "wherever the user is", not as a channel named "undefined".
+    it("leaves the address out when the conversation has none", async () => {
+        // A conversation that never says where it is must not claim an address: the server
+        // reads the absence as "wherever the user is", not as a place named "undefined".
         const { server, requests, url } = sseServer([completion()]);
 
         try {
@@ -103,8 +108,30 @@ describe("Conversations over SSE", () => {
                 convo.send("hello", (chunk) => { if ((chunk as Payload).data.quitStream) resolve(); });
             });
 
-            expect(requests[0].searchParams.has("channel")).toBe(false);
-            expect(convo.getChannel()).toBeUndefined();
+            expect(requests[0].searchParams.has("address")).toBe(false);
+            expect(convo.getAddress()).toBeUndefined();
+        } finally {
+            server.stop(true);
+        }
+    });
+
+    it("replaces the address whole rather than merging into it", async () => {
+        // A conversation that moved out of a thread must stop naming the thread it was in,
+        // which is what "whole" buys: the parts of the old address do not survive the new one.
+        const { server, requests, url } = sseServer([completion()]);
+
+        try {
+            const convo = new Conversation({ apiKey: "ap-abc_123", serverUrl: url, convoPath: "/chat" });
+            convo.setAddress({ platform: "discord", channelId: "channel-7", threadId: "thread-3" });
+            convo.setAddress({ platform: "discord", channelId: "channel-7" });
+
+            await new Promise<void>((resolve) => {
+                convo.send("hello", (chunk) => { if ((chunk as Payload).data.quitStream) resolve(); });
+            });
+
+            expect(JSON.parse(requests[0].searchParams.get("address")!))
+                .toEqual({ platform: "discord", channelId: "channel-7" });
+            expect(convo.getAddress()).toEqual({ platform: "discord", channelId: "channel-7" });
         } finally {
             server.stop(true);
         }

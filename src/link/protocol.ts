@@ -1,4 +1,5 @@
 import { ConversationEvent } from "../types/response/v5";
+import type { ConversationAddress } from "../types/conversation/address";
 
 /**
  * LINK WIRE PROTOCOL (client side)
@@ -96,8 +97,8 @@ export type LinkClientPayloads = {
         personality?: string;
         instructions?: string;
         platform?: string;
-        /** Where on the platform the conversation is: a Discord channel id, or `"DM"`. */
-        channel?: string;
+        /** Where on the platform the conversation is: on Discord, the channel and thread. */
+        address?: ConversationAddress;
     };
     "conversation.chat": {
         sessionId: string;

@@ -133,7 +133,9 @@ function asQuery(request: TransportTurnRequest): Record<string, string> {
     if (request.model) query.model = request.model;
     if (request.instructions) query.instructions = request.instructions;
     if (request.platform) query.platform = request.platform;
-    if (request.channel) query.channel = request.channel;
+    // An address is a small object, and a query parameter is a string: it travels JSON-encoded
+    // rather than as a field per part, so the server reads one whole address or none at all.
+    if (request.address) query.address = JSON.stringify(request.address);
     if (request.personality) query.personality = request.personality;
 
     return query;

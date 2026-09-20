@@ -1,6 +1,7 @@
 import type { Link } from "../link/link";
 import { LinkError, LinkServerFrame, LinkServerFrameOf } from "../link/protocol";
 import { ConversationEvent } from "../types/response/v5";
+import type { ConversationAddress } from "../types/conversation/address";
 import {
     completedPayload,
     ConversationStream,
@@ -22,8 +23,8 @@ export type LinkSessionConfig = {
     personality?: string;
     instructions?: string;
     platform?: string;
-    /** Where on the platform the conversation is: a Discord channel id, or `"DM"`. */
-    channel?: string;
+    /** Where on the platform the conversation is: on Discord, the channel and thread. */
+    address?: ConversationAddress;
 };
 
 /**
@@ -477,7 +478,7 @@ export class LinkConversationTransport implements ConversationTransport {
             ...(request.personality ?? config.personality ? { personality: request.personality ?? config.personality } : {}),
             ...(request.instructions ?? config.instructions ? { instructions: request.instructions ?? config.instructions } : {}),
             ...(request.platform ?? config.platform ? { platform: request.platform ?? config.platform } : {}),
-            ...(request.channel ?? config.channel ? { channel: request.channel ?? config.channel } : {}),
+            ...(request.address ?? config.address ? { address: request.address ?? config.address } : {}),
         }, {
             isDone: (frame) => frame.type === "conversation.open",
         });
