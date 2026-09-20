@@ -96,6 +96,8 @@ export type LinkClientPayloads = {
         personality?: string;
         instructions?: string;
         platform?: string;
+        /** Where on the platform the conversation is: a Discord channel id, or `"DM"`. */
+        channel?: string;
     };
     "conversation.chat": {
         sessionId: string;

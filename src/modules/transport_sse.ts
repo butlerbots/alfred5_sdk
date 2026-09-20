@@ -133,6 +133,7 @@ function asQuery(request: TransportTurnRequest): Record<string, string> {
     if (request.model) query.model = request.model;
     if (request.instructions) query.instructions = request.instructions;
     if (request.platform) query.platform = request.platform;
+    if (request.channel) query.channel = request.channel;
     if (request.personality) query.personality = request.personality;
 
     return query;

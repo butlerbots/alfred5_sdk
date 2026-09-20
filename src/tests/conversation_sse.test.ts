@@ -73,7 +73,7 @@ describe("Conversations over SSE", () => {
 
         try {
             const convo = new Conversation({ apiKey: "ap-abc_123", serverUrl: url, convoPath: "/chat" });
-            convo.setModel("GPT-5").setPlatform("tests");
+            convo.setModel("GPT-5").setPlatform("tests").setChannel("channel-7");
 
             await new Promise<void>((resolve) => {
                 convo.send("hello there", (chunk) => { if ((chunk as Payload).data.quitStream) resolve(); });
@@ -83,7 +83,28 @@ describe("Conversations over SSE", () => {
             expect(query.get("message")).toBe("hello there");
             expect(query.get("model")).toBe("GPT-5");
             expect(query.get("platform")).toBe("tests");
+            expect(query.get("channel")).toBe("channel-7");
             expect(query.get("api_key")).toBe("ap-abc_123");
+        } finally {
+            server.stop(true);
+        }
+    });
+
+    it("leaves the channel out when the conversation has none", async () => {
+        // A conversation that never says where it is must not claim a channel: the server
+        // reads the absence as "wherever the user is", not as a channel named "undefined".
+        const { server, requests, url } = sseServer([completion()]);
+
+        try {
+            const convo = new Conversation({ apiKey: "ap-abc_123", serverUrl: url, convoPath: "/chat" });
+            convo.setPlatform("tests");
+
+            await new Promise<void>((resolve) => {
+                convo.send("hello", (chunk) => { if ((chunk as Payload).data.quitStream) resolve(); });
+            });
+
+            expect(requests[0].searchParams.has("channel")).toBe(false);
+            expect(convo.getChannel()).toBeUndefined();
         } finally {
             server.stop(true);
         }

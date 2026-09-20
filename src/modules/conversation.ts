@@ -24,6 +24,12 @@ export type DialogueRequestParams = {
     instructions?: string;
     /** Platform where the chat is occurring */
     platform?: string;
+    /**
+     * Where on the platform the conversation is — a Discord channel id, or `"DM"` for a
+     * direct message. Anything Alfred has to say on this conversation outside a turn is
+     * delivered there.
+     */
+    channel?: string;
     /** Custom personality configuration for the AI */
     personality?: string;
 }
@@ -142,6 +148,7 @@ export class Conversation<V extends APIPath = "v4"> {
                 personality: this.options?.personality,
                 instructions: this.options?.instructions,
                 platform: this.options?.platform,
+                channel: this.options?.channel,
             }));
         } else {
             this.transport = new SSEConversationTransport({
@@ -213,6 +220,16 @@ export class Conversation<V extends APIPath = "v4"> {
         return this;
     }
 
+    /**
+     * Sets where on the platform the conversation is — a Discord channel id, or `"DM"` for a
+     * direct message. Anything Alfred has to say on this conversation outside a turn is
+     * delivered there.
+     */
+    setChannel(channel: string) {
+        this.options = { ...this.options, channel };
+        return this;
+    }
+
     /** Sets a custom personality configuration for the AI */
     setPersonality(personality: string) {
         this.options = { ...this.options, personality };
@@ -267,6 +284,11 @@ export class Conversation<V extends APIPath = "v4"> {
     /** Gets the current platform */
     getPlatform() {
         return this.options?.platform;
+    }
+
+    /** Gets where on the platform the conversation is */
+    getChannel() {
+        return this.options?.channel;
     }
 
     /** Gets the current personality configuration */

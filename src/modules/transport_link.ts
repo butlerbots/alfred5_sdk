@@ -22,6 +22,8 @@ export type LinkSessionConfig = {
     personality?: string;
     instructions?: string;
     platform?: string;
+    /** Where on the platform the conversation is: a Discord channel id, or `"DM"`. */
+    channel?: string;
 };
 
 /**
@@ -475,6 +477,7 @@ export class LinkConversationTransport implements ConversationTransport {
             ...(request.personality ?? config.personality ? { personality: request.personality ?? config.personality } : {}),
             ...(request.instructions ?? config.instructions ? { instructions: request.instructions ?? config.instructions } : {}),
             ...(request.platform ?? config.platform ? { platform: request.platform ?? config.platform } : {}),
+            ...(request.channel ?? config.channel ? { channel: request.channel ?? config.channel } : {}),
         }, {
             isDone: (frame) => frame.type === "conversation.open",
         });
