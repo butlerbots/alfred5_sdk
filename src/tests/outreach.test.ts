@@ -33,7 +33,7 @@ function delivery(overrides: Partial<Delivery> = {}): Delivery {
         intent: "question",
         facts: "Which draft?",
         message: "Which of these two flats should I book a viewing for?",
-        surfaces: [{ surface: "discord", status: "sent", channelId: "DM", messageId: "m1", attempts: 1, lastAt: 1700000000000 }],
+        surfaces: [{ surface: "discord", status: "sent", address: { platform: "discord", channelId: "DM" }, messageId: "m1", attempts: 1, lastAt: 1700000000000 }],
         answered: null,
         closed: null,
         source: "shift",
