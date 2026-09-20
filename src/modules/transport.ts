@@ -7,6 +7,8 @@
  * caller sees, including the payload shape, is identical either way.
  */
 
+import type { ConversationAddress } from "../types/conversation/address";
+
 /** A turn in progress. */
 export type ConversationStream = {
     /**
@@ -54,6 +56,8 @@ export type TransportTurnRequest = {
     model?: string;
     instructions?: string;
     platform?: string;
+    /** Where on the platform the conversation is: on Discord, the channel and thread. */
+    address?: ConversationAddress;
     personality?: string;
 };
 

@@ -9,6 +9,7 @@ import { SSEConversationTransport, streamSSE } from "./transport_sse";
 import { RequestResponseV3, RequestResponseV4 } from "../types/type_registry";
 import { RequestResponseV5 } from "../types/response/v5/dialogue_response_v5";
 import { ConversationStateResponse } from "../types/state/convo_state_response";
+import { ConversationAddress } from "../types/conversation/address";
 import { formatURL } from "../util/url_formatter";
 import { TurnProgressEntry } from "../types/response/v4/turn_registry_v4";
 import { TurnProgressEntryV5 } from "../types/response/v5/turn_registry_v5";
@@ -24,6 +25,12 @@ export type DialogueRequestParams = {
     instructions?: string;
     /** Platform where the chat is occurring */
     platform?: string;
+    /**
+     * Where on the platform the conversation is — on Discord, the channel and the thread
+     * inside it. Anything Alfred has to say on this conversation outside a turn is delivered
+     * there. An address is whole: a new one replaces the old rather than merging into it.
+     */
+    address?: ConversationAddress;
     /** Custom personality configuration for the AI */
     personality?: string;
 }
@@ -142,6 +149,7 @@ export class Conversation<V extends APIPath = "v4"> {
                 personality: this.options?.personality,
                 instructions: this.options?.instructions,
                 platform: this.options?.platform,
+                address: this.options?.address,
             }));
         } else {
             this.transport = new SSEConversationTransport({
@@ -213,6 +221,17 @@ export class Conversation<V extends APIPath = "v4"> {
         return this;
     }
 
+    /**
+     * Sets where on the platform the conversation is — on Discord, the channel and the thread
+     * inside it. Anything Alfred has to say on this conversation outside a turn is delivered
+     * there. The address is whole: this replaces whatever the conversation named before rather
+     * than merging into it, so a conversation that left a thread stops naming one.
+     */
+    setAddress(address: ConversationAddress) {
+        this.options = { ...this.options, address };
+        return this;
+    }
+
     /** Sets a custom personality configuration for the AI */
     setPersonality(personality: string) {
         this.options = { ...this.options, personality };
@@ -267,6 +286,11 @@ export class Conversation<V extends APIPath = "v4"> {
     /** Gets the current platform */
     getPlatform() {
         return this.options?.platform;
+    }
+
+    /** Gets where on the platform the conversation is */
+    getAddress() {
+        return this.options?.address;
     }
 
     /** Gets the current personality configuration */

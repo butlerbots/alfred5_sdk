@@ -134,7 +134,8 @@ describe("Conversations over a link", () => {
 
     it("passes the conversation's configuration to the session", async () => {
         const { socket, convo } = await linkedConversation();
-        convo.setModel("GPT-5").setPersonality("You are a barista").setInstructions("Be brief");
+        convo.setModel("GPT-5").setPersonality("You are a barista").setInstructions("Be brief")
+            .setPlatform("discord").setAddress({ platform: "discord", channelId: "channel-7", threadId: "thread-3" });
 
         convo.send("hello", () => undefined);
         await flush();
@@ -143,6 +144,9 @@ describe("Conversations over a link", () => {
             model: "GPT-5",
             personality: "You are a barista",
             instructions: "Be brief",
+            platform: "discord",
+            // An object on this transport, not the JSON string the query parameter has to be.
+            address: { platform: "discord", channelId: "channel-7", threadId: "thread-3" },
         });
     });
 
