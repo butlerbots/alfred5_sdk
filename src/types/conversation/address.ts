@@ -22,4 +22,12 @@ export type DiscordAddress = {
     platform: "discord";
     channelId: string;
     threadId?: string;
+    /**
+     * The message the conversation was last held at — the user's most recent message in it.
+     *
+     * Anything Alfred says on the conversation outside a turn is posted as a reply to it, so a
+     * background task reporting back an hour later still says what it is answering, in a
+     * channel that has moved on since.
+     */
+    messageId?: string;
 };
