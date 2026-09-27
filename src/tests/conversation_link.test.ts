@@ -182,6 +182,49 @@ describe("Conversations over a link", () => {
         expect(second.payload).not.toHaveProperty("wake");
     });
 
+    it("sends a turn's context on the frame, and none when it is empty", async () => {
+        const { socket, convo } = await linkedConversation();
+        const context = [{ kind: "reply", title: "Replying to", text: "Sam: what time does the store close?" }];
+
+        convo.send("first", () => undefined, { context });
+        const first = await openSession(socket);
+        // The JSON string, as the query parameter carries it: the Link service passes it on as it is.
+        expect(JSON.parse((first.payload as { context: string }).context)).toEqual(context);
+        expect(socket.ofType("conversation.start")[0].payload).not.toHaveProperty("context");
+        socket.push("conversation.done", { chatId: "convo-1", ok: true }, first.id);
+        await flush();
+
+        convo.send("second", () => undefined, { context: [] });
+        await flush();
+        expect(socket.ofType("conversation.chat").at(-1)!.payload).not.toHaveProperty("context");
+    });
+
+    it("sends extra on the frame as one object, and none when it is empty", async () => {
+        const { socket, convo } = await linkedConversation();
+
+        convo.send("first", () => undefined, { extra: { summon: "cold", mood: "cheerful" } });
+        const first = await openSession(socket);
+        expect(first.payload).toMatchObject({ message: "first", extra: { summon: "cold", mood: "cheerful" } });
+        socket.push("conversation.done", { chatId: "convo-1", ok: true }, first.id);
+        await flush();
+
+        convo.send("second", () => undefined, { extra: {} });
+        await flush();
+        expect(socket.ofType("conversation.chat").at(-1)!.payload).not.toHaveProperty("extra");
+    });
+
+    it("refuses an extra entry that would replace a field it sends, before sending anything", async () => {
+        const { socket, convo } = await linkedConversation();
+
+        expect(() => convo.send("hello", () => undefined, { extra: { platform: "elsewhere" } }))
+            .toThrow(`may not set "platform"`);
+        await expect(convo.ask("hello", { extra: { api_key: "someone-else" } })).rejects.toThrow(`may not set "api_key"`);
+        await flush();
+
+        expect(socket.ofType("conversation.start")).toHaveLength(0);
+        expect(socket.ofType("conversation.chat")).toHaveLength(0);
+    });
+
     it("presents a notice the way the HTTP transport does", async () => {
         // Alfred's own remarks are not part of conversation state, but a consumer that
         // switched transport should not need a special case for them.

@@ -108,6 +108,16 @@ export type LinkClientPayloads = {
         personality?: string;
         /** Why Alfred is speaking on this one turn: a line for its system prompt, at most 500 characters. */
         wake?: string;
+        /**
+         * What the platform attaches beside this turn's message: a `MessageContextItem[]`,
+         * JSON-encoded, passed to the server as it is. Absent when there are no items.
+         */
+        context?: string;
+        /**
+         * Further turn parameters, which the Link service spreads into the server's query.
+         * Never one of the fields above or the credential; absent when there are none.
+         */
+        extra?: Record<string, string>;
     };
     "conversation.end": { sessionId: string };
     /**

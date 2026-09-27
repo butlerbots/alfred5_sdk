@@ -10,6 +10,7 @@ import { RequestResponseV3, RequestResponseV4 } from "../types/type_registry";
 import { RequestResponseV5 } from "../types/response/v5/dialogue_response_v5";
 import { ConversationStateResponse } from "../types/state/convo_state_response";
 import { ConversationAddress } from "../types/conversation/address";
+import { MessageContextItem } from "../types/conversation/context";
 import { formatURL } from "../util/url_formatter";
 import { TurnProgressEntry } from "../types/response/v4/turn_registry_v4";
 import { TurnProgressEntryV5 } from "../types/response/v5/turn_registry_v5";
@@ -41,6 +42,28 @@ export type DialogueRequestParams = {
      * 500 characters; the server refuses a longer one. Left off when blank.
      */
     wake?: string;
+    /**
+     * What the platform attaches beside this turn's message, never inside it: what it replies
+     * to, who it mentions, where it was sent. See `MessageContextItem` for the shape and the
+     * bounds (8 items, an 80-character title, a 4 000-character text, 12 000 characters in
+     * all), which the server enforces by refusing the turn. Passed per `send()`/`ask()`, since
+     * it belongs to the one message; left off when empty.
+     */
+    context?: MessageContextItem[];
+    /**
+     * Further parameters for this one turn, forwarded to the server verbatim: each entry
+     * becomes a query parameter over SSE, and a field of `extra` on the `conversation.chat`
+     * frame over a Link, which the Link service spreads into the same query. The SDK does not
+     * read them; the server validates whatever arrives, as it does its named parameters.
+     *
+     * This is how a new turn parameter reaches the server without an SDK change: the server
+     * learns to read it and the client sends it here.
+     *
+     * A key the transport already sends (`RESERVED_TURN_FIELDS`: `message`, `chatId`,
+     * `api_key`, `model`, `instructions`, `platform`, `address`, `personality`, `wake`,
+     * `context`) is refused: `send()` throws, and `ask()` rejects, before anything is sent.
+     */
+    extra?: Record<string, string>;
 }
 
 export type DialogueRequestOptions = Omit<Omit<DialogueRequestParams, "message">, "chatId">;

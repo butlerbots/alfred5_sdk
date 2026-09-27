@@ -16,6 +16,8 @@ import {
     TransportStopRequest,
     TransportTurnRequest,
     TurnStopped,
+    turnContext,
+    turnExtra,
 } from "./transport";
 
 export type LinkSessionConfig = {
@@ -69,6 +71,9 @@ export class LinkConversationTransport implements ConversationTransport {
     }
 
     send(request: TransportTurnRequest, handlers: TransportHandlers): ConversationStream {
+        // Refused here, synchronously, as the SSE transport refuses it: before anything is sent.
+        turnExtra(request.extra);
+
         const listening: Listening = { closed: false };
         const deliver: TransportHandlers = {
             payload: (payload) => { if (!listening.closed) handlers.payload(payload); },
@@ -233,6 +238,9 @@ export class LinkConversationTransport implements ConversationTransport {
 
         learnChatId(progress.chatId);
 
+        const context = turnContext(request.context);
+        const extra = turnExtra(request.extra);
+
         let done: LinkServerFrame;
         try {
             done = await this.link.exchange("conversation.chat", {
@@ -243,6 +251,8 @@ export class LinkConversationTransport implements ConversationTransport {
                 ...(request.personality ? { personality: request.personality } : {}),
                 // Per turn, never on the session: it says why Alfred was woken for this one.
                 ...(request.wake?.trim() ? { wake: request.wake.trim() } : {}),
+                ...(context ? { context } : {}),
+                ...(extra ? { extra } : {}),
             }, {
                 // A turn takes as long as it takes; only the transport dying ends it early.
                 timeoutMs: 0,

@@ -156,6 +156,70 @@ describe("Conversations over SSE", () => {
         }
     });
 
+    it("sends a turn's context as one JSON parameter, and none when it is empty", async () => {
+        const { server, requests, url } = sseServer([completion(), completion(), completion()]);
+        const context = [
+            { kind: "reply", title: "Replying to", text: "Sam: what time does the store close?" },
+            { kind: "mentions", title: "Mentions", text: "Sam (@sam) = <@123>" },
+        ];
+
+        try {
+            const convo = new Conversation({ apiKey: "ap-abc_123", serverUrl: url, convoPath: "/chat" });
+            const turn = (options?: Parameters<typeof convo.send>[2]) => new Promise<void>((resolve) => {
+                convo.send("hello", (chunk) => { if ((chunk as Payload).data.quitStream) resolve(); }, options);
+            });
+
+            await turn({ context });
+            await turn({ context: [] });
+            await turn();
+
+            expect(JSON.parse(requests[0].searchParams.get("context")!)).toEqual(context);
+            expect(requests[1].searchParams.has("context")).toBe(false);
+            expect(requests[2].searchParams.has("context")).toBe(false);
+        } finally {
+            server.stop(true);
+        }
+    });
+
+    it("sends each extra entry as a query parameter of its own", async () => {
+        const { server, requests, url } = sseServer([completion()]);
+
+        try {
+            const convo = new Conversation({ apiKey: "ap-abc_123", serverUrl: url, convoPath: "/chat" });
+
+            await new Promise<void>((resolve) => {
+                convo.send("hello", (chunk) => { if ((chunk as Payload).data.quitStream) resolve(); },
+                    { model: "GPT-5", extra: { summon: "cold", mood: "cheerful" } });
+            });
+
+            expect(requests[0].searchParams.get("summon")).toBe("cold");
+            expect(requests[0].searchParams.get("mood")).toBe("cheerful");
+            expect(requests[0].searchParams.get("message")).toBe("hello");
+            expect(requests[0].searchParams.get("model")).toBe("GPT-5");
+        } finally {
+            server.stop(true);
+        }
+    });
+
+    it("refuses an extra entry that would replace a field it sends, before sending anything", async () => {
+        const { server, requests, url } = sseServer([completion()]);
+
+        try {
+            const convo = new Conversation({ apiKey: "ap-abc_123", serverUrl: url, convoPath: "/chat" });
+
+            for (const key of ["message", "api_key", "chatId", "wake", "context"]) {
+                expect(() => convo.send("hello", () => undefined, { extra: { [key]: "x" } }))
+                    .toThrow(`may not set "${key}"`);
+            }
+            await expect(convo.ask("hello", { extra: { model: "cheap" } })).rejects.toThrow(`may not set "model"`);
+
+            await new Promise(resolve => setTimeout(resolve, 20));
+            expect(requests).toHaveLength(0);
+        } finally {
+            server.stop(true);
+        }
+    });
+
     it("replaces the address whole rather than merging into it", async () => {
         // A conversation that moved out of a thread must stop naming the thread it was in,
         // which is what "whole" buys: the parts of the old address do not survive the new one.

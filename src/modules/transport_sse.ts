@@ -10,6 +10,8 @@ import {
     TransportStopRequest,
     TransportTurnRequest,
     TurnStopped,
+    turnContext,
+    turnExtra,
 } from "./transport";
 
 type StreamOptions = {
@@ -139,6 +141,10 @@ function asQuery(request: TransportTurnRequest): Record<string, string> {
     if (request.personality) query.personality = request.personality;
     const wake = request.wake?.trim();
     if (wake) query.wake = wake;
+    const context = turnContext(request.context);
+    if (context) query.context = context;
 
-    return query;
+    // Checked before anything else is added, so an entry can never replace a field above.
+    const extra = turnExtra(request.extra);
+    return extra ? { ...extra, ...query } : query;
 }

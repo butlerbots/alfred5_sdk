@@ -4,6 +4,7 @@ export * from "./response/v5";
 export * from "./state/convo_state_response";
 export * from "./conversation/v4/conversation_v4";
 export * from "./conversation/address";
+export * from "./conversation/context";
 export * from "./jobs";
 export * from "./outreach";
 export * from "./error";

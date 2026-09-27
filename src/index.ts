@@ -196,3 +196,4 @@ export type {
 export { LinkConversationTransport } from "./modules/transport_link";
 export { SSEConversationTransport } from "./modules/transport_sse";
 export type { SteerResult, TurnStopMode, TurnStopped } from "./modules/transport";
+export { RESERVED_TURN_FIELDS } from "./modules/transport";
