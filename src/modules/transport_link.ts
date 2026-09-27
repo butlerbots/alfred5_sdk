@@ -241,6 +241,8 @@ export class LinkConversationTransport implements ConversationTransport {
                 ...(request.model ? { model: request.model } : {}),
                 ...(request.instructions ? { instructions: request.instructions } : {}),
                 ...(request.personality ? { personality: request.personality } : {}),
+                // Per turn, never on the session: it says why Alfred was woken for this one.
+                ...(request.wake?.trim() ? { wake: request.wake.trim() } : {}),
             }, {
                 // A turn takes as long as it takes; only the transport dying ends it early.
                 timeoutMs: 0,

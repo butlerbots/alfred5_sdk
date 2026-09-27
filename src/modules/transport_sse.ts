@@ -137,6 +137,8 @@ function asQuery(request: TransportTurnRequest): Record<string, string> {
     // rather than as a field per part, so the server reads one whole address or none at all.
     if (request.address) query.address = JSON.stringify(request.address);
     if (request.personality) query.personality = request.personality;
+    const wake = request.wake?.trim();
+    if (wake) query.wake = wake;
 
     return query;
 }

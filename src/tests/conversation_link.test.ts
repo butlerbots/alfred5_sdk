@@ -150,6 +150,38 @@ describe("Conversations over a link", () => {
         });
     });
 
+    it("sends the wake line on the turn, not the session", async () => {
+        // It says why Alfred was woken for this one turn, so it rides `conversation.chat`
+        // and never becomes part of the session's configuration.
+        const { socket, convo } = await linkedConversation();
+
+        convo.send("hello", () => undefined, { wake: "You are joining because a rule of the user's matched: deploy failed" });
+        const chat = await openSession(socket);
+
+        expect(chat.payload).toMatchObject({
+            message: "hello",
+            wake: "You are joining because a rule of the user's matched: deploy failed",
+        });
+        expect(socket.ofType("conversation.start")[0].payload).not.toHaveProperty("wake");
+    });
+
+    it("leaves the wake line out when it is omitted or blank", async () => {
+        const { socket, convo } = await linkedConversation();
+
+        convo.send("first", () => undefined);
+        const first = await openSession(socket);
+        expect(first.payload).not.toHaveProperty("wake");
+        socket.push("conversation.done", { chatId: "convo-1", ok: true }, first.id);
+        await flush();
+
+        convo.send("second", () => undefined, { wake: "  " });
+        await flush();
+
+        const second = socket.ofType("conversation.chat").at(-1)!;
+        expect(second.payload).toMatchObject({ message: "second" });
+        expect(second.payload).not.toHaveProperty("wake");
+    });
+
     it("presents a notice the way the HTTP transport does", async () => {
         // Alfred's own remarks are not part of conversation state, but a consumer that
         // switched transport should not need a special case for them.

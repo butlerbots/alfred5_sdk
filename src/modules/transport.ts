@@ -59,6 +59,8 @@ export type TransportTurnRequest = {
     /** Where on the platform the conversation is: on Discord, the channel and thread. */
     address?: ConversationAddress;
     personality?: string;
+    /** Why Alfred is speaking on this one turn: a line for its system prompt, at most 500 characters. */
+    wake?: string;
 };
 
 export type TransportHandlers = {

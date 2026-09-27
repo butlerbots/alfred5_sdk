@@ -106,6 +106,8 @@ export type LinkClientPayloads = {
         model?: string;
         instructions?: string;
         personality?: string;
+        /** Why Alfred is speaking on this one turn: a line for its system prompt, at most 500 characters. */
+        wake?: string;
     };
     "conversation.end": { sessionId: string };
     /**

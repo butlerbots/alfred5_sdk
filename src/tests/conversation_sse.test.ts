@@ -116,6 +116,46 @@ describe("Conversations over SSE", () => {
         }
     });
 
+    it("sends the wake line with the turn it was given for", async () => {
+        const { server, requests, url } = sseServer([completion()]);
+
+        try {
+            const convo = new Conversation({ apiKey: "ap-abc_123", serverUrl: url, convoPath: "/chat" });
+
+            await new Promise<void>((resolve) => {
+                convo.send("hello", (chunk) => { if ((chunk as Payload).data.quitStream) resolve(); },
+                    { wake: "You are joining because a rule of the user's matched: deploy failed" });
+            });
+
+            expect(requests[0].searchParams.get("wake"))
+                .toBe("You are joining because a rule of the user's matched: deploy failed");
+        } finally {
+            server.stop(true);
+        }
+    });
+
+    it("leaves the wake line out when it is omitted or blank", async () => {
+        // Blank is not a reason: the server would read an empty line as one to add to the prompt.
+        const { server, requests, url } = sseServer([completion(), completion()]);
+
+        try {
+            const convo = new Conversation({ apiKey: "ap-abc_123", serverUrl: url, convoPath: "/chat" });
+
+            await new Promise<void>((resolve) => {
+                convo.send("hello", (chunk) => { if ((chunk as Payload).data.quitStream) resolve(); });
+            });
+            await new Promise<void>((resolve) => {
+                convo.send("hello", (chunk) => { if ((chunk as Payload).data.quitStream) resolve(); }, { wake: "   " });
+            });
+
+            expect(requests).toHaveLength(2);
+            expect(requests[0].searchParams.has("wake")).toBe(false);
+            expect(requests[1].searchParams.has("wake")).toBe(false);
+        } finally {
+            server.stop(true);
+        }
+    });
+
     it("replaces the address whole rather than merging into it", async () => {
         // A conversation that moved out of a thread must stop naming the thread it was in,
         // which is what "whole" buys: the parts of the old address do not survive the new one.
