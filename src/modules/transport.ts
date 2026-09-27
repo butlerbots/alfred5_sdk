@@ -8,6 +8,7 @@
  */
 
 import type { ConversationAddress } from "../types/conversation/address";
+import type { MessageContextItem } from "../types/conversation/context";
 
 /** A turn in progress. */
 export type ConversationStream = {
@@ -61,7 +62,59 @@ export type TransportTurnRequest = {
     personality?: string;
     /** Why Alfred is speaking on this one turn: a line for its system prompt, at most 500 characters. */
     wake?: string;
+    /** What the platform attaches beside this turn's message. Sent only when non-empty. */
+    context?: MessageContextItem[];
+    /** Further turn parameters, forwarded to the server verbatim. See `DialogueRequestParams.extra`. */
+    extra?: Record<string, string>;
 };
+
+/**
+ * The turn parameters the server reads by name, which a transport sends itself. An `extra`
+ * entry may not use one: it would replace what the transport sent, or, for `api_key`, the
+ * credential. Both transports refuse the same list, since over a Link the service spreads
+ * `extra` into the very query the SSE transport builds.
+ */
+export const RESERVED_TURN_FIELDS: readonly string[] = [
+    "api_key",
+    "message",
+    "chatId",
+    "model",
+    "instructions",
+    "platform",
+    "address",
+    "personality",
+    "wake",
+    "context",
+];
+
+/**
+ * A turn's `extra`, checked, or nothing when there is none to send. Throws on a key that
+ * collides with a field the transport sends, and on a value that is not a string, before
+ * anything reaches the wire.
+ */
+export function turnExtra(extra: Record<string, string> | undefined): Record<string, string> | undefined {
+    if (!extra) return undefined;
+
+    const entries = Object.entries(extra);
+    if (entries.length === 0) return undefined;
+
+    for (const [key, value] of entries) {
+        if (!key) throw new Error("A turn's `extra` may not have an empty key.");
+        if (RESERVED_TURN_FIELDS.includes(key)) {
+            throw new Error(`A turn's \`extra\` may not set "${key}": the transport already sends it. Reserved: ${RESERVED_TURN_FIELDS.join(", ")}.`);
+        }
+        if (typeof value !== "string") {
+            throw new Error(`A turn's \`extra\` values must be strings; "${key}" is ${typeof value}.`);
+        }
+    }
+
+    return Object.fromEntries(entries);
+}
+
+/** A turn's context as it travels, JSON-encoded, or nothing when there is none. */
+export function turnContext(context: MessageContextItem[] | undefined): string | undefined {
+    return context && context.length > 0 ? JSON.stringify(context) : undefined;
+}
 
 export type TransportHandlers = {
     /** One payload of the stream, already in the shape callers expect. */
