@@ -33,6 +33,14 @@ export type DialogueRequestParams = {
     address?: ConversationAddress;
     /** Custom personality configuration for the AI */
     personality?: string;
+    /**
+     * Why Alfred is speaking on this turn, when something other than the message is the
+     * reason — for example "You are joining because a rule of the user's matched: ...".
+     * A line added to this one turn's system prompt and never written to the conversation,
+     * so it is passed per `send()`/`ask()` rather than set on the conversation. At most
+     * 500 characters; the server refuses a longer one. Left off when blank.
+     */
+    wake?: string;
 }
 
 export type DialogueRequestOptions = Omit<Omit<DialogueRequestParams, "message">, "chatId">;
