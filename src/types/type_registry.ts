@@ -7,4 +7,5 @@ export * from "./conversation/address";
 export * from "./conversation/context";
 export * from "./jobs";
 export * from "./outreach";
+export * from "./judge";
 export * from "./error";

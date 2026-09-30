@@ -387,10 +387,63 @@ one, and answering it is refused with a 409 just as one already answered is. `so
 wrote a delivery: `shift` for a question a job's shift asked, `runtime` for the job's own
 status tells, `gate` for an approval the autonomy gate asked for.
 
+## Judge
+
+A yes/no, pick-one or score decision on facts you state, made by a decision model: well under
+a second and a fraction of a cent, so an app can ask it per event. It is Alfred's own judge,
+the one his jobs and reflexes decide with, for your code to decide with too.
+
+```typescript
+const { answers, model, costUsd } = await client.judge({
+  state: { message: text, author: "bot: false", channel: "general", rules },
+  questions: {
+    hostile: {
+      type: "boolean",
+      instructions: "Is the message hostile?",
+      criteria: { true: "It attacks or insults someone", false: "It is civil, however blunt" },
+    },
+    rule: {
+      type: "choice",
+      instructions: "Which server rule does the message break?",
+      criteria: { spam: "Promotional or repeated", abuse: "Insults a person", none: "No rule is broken" },
+    },
+    heat: {
+      type: "score",
+      instructions: "How heated is the message?",
+      criteria: ["Calm", "Annoyed", "Furious"],
+    },
+  },
+});
+
+answers.hostile.value;        // boolean: value, probability
+answers.rule.choice;          // "spam" | "abuse" | "none", with confidence and every label's probability
+answers.heat.level;           // 0..2, with score (the weighted mean) and confidence
+```
+
+Every question is judged against the same `state` in one call, and the answers come back keyed
+by question id and typed by the question: a choice's `choice` is one of its own criteria keys.
+It is a decision model, not a chat model: it writes no text and does no reasoning, so
+
+- state facts, never a transcript or an argument for an answer;
+- work out numbers and dates in code and state the result;
+- describe both sides of a boolean, since the model weighs the state against each;
+- add a `none` label to a choice when nothing may fit, or the nearest label is picked however
+  poor the fit;
+- keep a score to ten levels, `criteria[0]` the bottom.
+
+State and the longest question together fit in about 32,000 tokens. A question the judge cannot
+ask is a 400 carrying its message, and a judgement it could not reach is a 503: both throw
+`ButlerBotAPIError`, never a guess. Needs `judge.run`.
+
+The judge is for a decision your app makes itself. For Alfred to react to something, do not
+judge first: report it as a [hook event](#hooks-emit-or-report-what-matched) and the user's
+reflex decides, with the judge inside it when it needs one. That keeps what Alfred reacts to,
+and what it costs, in the user's hands.
+
 ### When a call fails
 
-Every jobs and outreach call throws `ButlerBotAPIError` when the server does not answer with a
-success. The status is on the error, so the cases worth branching on are told apart without
+Every jobs, outreach and judge call throws `ButlerBotAPIError` when the server does not answer
+with a success. The status is on the error, so the cases worth branching on are told apart without
 reading a message, and the parsed body is kept — a rejected cancel still carries the job, a
 rejected answer still carries the delivery:
 
