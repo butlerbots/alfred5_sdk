@@ -26,6 +26,8 @@ import {
     type AnswerDeliveryOptions,
     type ListDeliveriesOptions,
 } from "./modules/outreach";
+import { judge, type JudgeOptions } from "./modules/judge";
+import type { JudgeQuestions } from "./types/judge";
 
 type OptionalApiKey<T> = Omit<T, "apiKey"> & {
     /** Optional API key, defaults to API key specified in client */
@@ -158,6 +160,16 @@ export class ButlerBotClient {
         return answerDelivery(this.forRequest(config));
     }
 
+    /**
+     * Asks the judge: a yes/no, pick-one or score decision on facts you state, by a decision
+     * model, in well under a second for a fraction of a cent. Answers come back keyed by
+     * question id and typed by the question. Throws a `ButlerBotAPIError` with `isBadRequest`
+     * on a question the judge cannot ask, carrying its message
+     */
+    judge<Q extends JudgeQuestions>(config: OptionalApiKey<JudgeOptions<Q>>) {
+        return judge<Q>(this.forRequest(config));
+    }
+
     /** The client's own server and key underneath whatever the call named itself. */
     private forRequest<T extends { serverURL?: string; apiKey: string; debug?: boolean }>(config: OptionalApiKey<T>): T {
         return { serverURL: this.serverUrl, apiKey: this.apiKey, debug: this.debug, ...given(config) } as T;
@@ -193,6 +205,8 @@ export type {
     ListDeliveriesOptions,
     AnswerDeliveryOptions,
 } from "./modules/outreach";
+export { judge } from "./modules/judge";
+export type { JudgeRequestOptions, JudgeOptions } from "./modules/judge";
 export { LinkConversationTransport } from "./modules/transport_link";
 export { SSEConversationTransport } from "./modules/transport_sse";
 export type { SteerResult, TurnStopMode, TurnStopped } from "./modules/transport";

@@ -56,7 +56,11 @@ export const CONFIG = {
         outreach: {
             /** The inbox. One delivery's answer is `${base}/${deliveryId}/answer`. */
             base: "/api/outreach",
-        }
+        },
+        judge: {
+            /** A decision on stated facts, by a decision model. */
+            base: "/api/judge",
+        },
     }
 }
 
