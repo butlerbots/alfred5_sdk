@@ -35,6 +35,14 @@ export type ToolStatus = {
     content?: ToolStatusContent[];
     /** Whether this tool call is ending the conversation */
     endingConvo?: boolean;
+    /** The tool that ran: its id, or a raw (MCP) tool's key. A fact for clients to present, never a label. */
+    toolId?: string;
+    /** Epoch ms of the first status emitted for this id; the same on every later status for it. */
+    startedAt?: number;
+    /** Epoch ms at which this id reached `completed` or `failed`. */
+    endedAt?: number;
+    /** The id of an earlier failed call of the same tool, in the same turn, that this call retries. */
+    retryOf?: string;
 }
 
 // =============================================
