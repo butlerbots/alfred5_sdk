@@ -17,6 +17,7 @@ import {
     TransportTurnRequest,
     TurnStopped,
     turnContext,
+    turnTools,
     turnExtra,
 } from "./transport";
 
@@ -239,7 +240,12 @@ export class LinkConversationTransport implements ConversationTransport {
         learnChatId(progress.chatId);
 
         const context = turnContext(request.context);
-        const extra = turnExtra(request.extra);
+        // The turn's tools ride in `extra`, which the Link service spreads into the same query
+        // the SSE transport builds: the server reads `tools` either way, and a caller's own
+        // `extra` can never carry that key, since the transport reserves it.
+        const tools = turnTools(request.tools);
+        const own = turnExtra(request.extra);
+        const extra = tools ? { ...(own ?? {}), tools } : own;
 
         let done: LinkServerFrame;
         try {

@@ -182,6 +182,27 @@ describe("Conversations over a link", () => {
         expect(second.payload).not.toHaveProperty("wake");
     });
 
+    it("sends a turn's tools inside the frame's extra, beside the caller's own, and none when empty", async () => {
+        // The Link service spreads `extra` into the query the SSE transport builds, so the
+        // server reads `tools` the same way over both; the caller's own extra cannot carry
+        // the key, since the transport reserves it.
+        const { socket, convo } = await linkedConversation();
+
+        convo.send("first", () => undefined, { tools: ["react", " react", "describe_tool"], extra: { title: "general" } });
+        const first = await openSession(socket);
+        expect(first.payload).toMatchObject({ message: "first", extra: { title: "general", tools: "react,describe_tool" } });
+        expect(first.payload).not.toHaveProperty("tools");
+        socket.push("conversation.done", { chatId: "convo-1", ok: true }, first.id);
+        await flush();
+
+        convo.send("second", () => undefined, { tools: [] });
+        await flush();
+
+        const second = socket.ofType("conversation.chat").at(-1)!;
+        expect(second.payload).toMatchObject({ message: "second" });
+        expect(second.payload).not.toHaveProperty("extra");
+    });
+
     it("sends a turn's context on the frame, and none when it is empty", async () => {
         const { socket, convo } = await linkedConversation();
         const context = [{ kind: "reply", title: "Replying to", text: "Sam: what time does the store close?" }];

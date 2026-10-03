@@ -11,6 +11,7 @@ import {
     TransportTurnRequest,
     TurnStopped,
     turnContext,
+    turnTools,
     turnExtra,
 } from "./transport";
 
@@ -141,6 +142,8 @@ function asQuery(request: TransportTurnRequest): Record<string, string> {
     if (request.personality) query.personality = request.personality;
     const wake = request.wake?.trim();
     if (wake) query.wake = wake;
+    const tools = turnTools(request.tools);
+    if (tools) query.tools = tools;
     const context = turnContext(request.context);
     if (context) query.context = context;
 

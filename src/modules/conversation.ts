@@ -43,6 +43,15 @@ export type DialogueRequestParams = {
      */
     wake?: string;
     /**
+     * Tools switched on for this one turn, by id, that the turn could reach but has off unless
+     * asked for: the Discord bot asks for `react` on a turn the summoning judge started, so
+     * Alfred may answer a message with a reaction rather than words. Activation, never a grant:
+     * the server switches on only what the turn's platform, the user's plan and the user's own
+     * settings already allow, and refuses an id it does not know with the nearest real ones.
+     * Passed per `send()`/`ask()`, since it is true of the one turn; left off when empty.
+     */
+    tools?: string[];
+    /**
      * What the platform attaches beside this turn's message, never inside it: what it replies
      * to, who it mentions, where it was sent. See `MessageContextItem` for the shape and the
      * bounds (8 items, an 80-character title, a 4 000-character text, 12 000 characters in
@@ -61,7 +70,7 @@ export type DialogueRequestParams = {
      *
      * A key the transport already sends (`RESERVED_TURN_FIELDS`: `message`, `chatId`,
      * `api_key`, `model`, `instructions`, `platform`, `address`, `personality`, `wake`,
-     * `context`) is refused: `send()` throws, and `ask()` rejects, before anything is sent.
+     * `tools`, `context`) is refused: `send()` throws, and `ask()` rejects, before anything is sent.
      */
     extra?: Record<string, string>;
 }
