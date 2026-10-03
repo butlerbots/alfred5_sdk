@@ -62,6 +62,8 @@ export type TransportTurnRequest = {
     personality?: string;
     /** Why Alfred is speaking on this one turn: a line for its system prompt, at most 500 characters. */
     wake?: string;
+    /** Tools switched on for this one turn, by id. Sent only when non-empty; see `DialogueRequestParams.tools`. */
+    tools?: string[];
     /** What the platform attaches beside this turn's message. Sent only when non-empty. */
     context?: MessageContextItem[];
     /** Further turn parameters, forwarded to the server verbatim. See `DialogueRequestParams.extra`. */
@@ -84,6 +86,7 @@ export const RESERVED_TURN_FIELDS: readonly string[] = [
     "address",
     "personality",
     "wake",
+    "tools",
     "context",
 ];
 
@@ -114,6 +117,24 @@ export function turnExtra(extra: Record<string, string> | undefined): Record<str
 /** A turn's context as it travels, JSON-encoded, or nothing when there is none. */
 export function turnContext(context: MessageContextItem[] | undefined): string | undefined {
     return context && context.length > 0 ? JSON.stringify(context) : undefined;
+}
+
+/**
+ * A turn's tools as they travel: the ids trimmed, emptied ones dropped, repeats folded, joined
+ * with commas; nothing when none is left. A comma in an id would read as two ids, so one is
+ * refused before anything is sent.
+ */
+export function turnTools(tools: string[] | undefined): string | undefined {
+    if (!tools || tools.length === 0) return undefined;
+    const ids: string[] = [];
+    for (const raw of tools) {
+        if (typeof raw !== "string") throw new Error(`A turn's \`tools\` are tool ids; one is ${typeof raw}.`);
+        const id = raw.trim();
+        if (!id) continue;
+        if (id.includes(",")) throw new Error(`A turn's \`tools\` entry may not contain a comma: "${id}".`);
+        if (!ids.includes(id)) ids.push(id);
+    }
+    return ids.length > 0 ? ids.join(",") : undefined;
 }
 
 export type TransportHandlers = {

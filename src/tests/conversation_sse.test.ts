@@ -156,6 +156,33 @@ describe("Conversations over SSE", () => {
         }
     });
 
+    it("sends a turn's tools as one comma-separated parameter: trimmed, folded, and none when empty", async () => {
+        const { server, requests, url } = sseServer([completion(), completion(), completion()]);
+
+        try {
+            const convo = new Conversation({ apiKey: "ap-abc_123", serverUrl: url, convoPath: "/chat" });
+
+            await new Promise<void>((resolve) => {
+                convo.send("hello", (chunk) => { if ((chunk as Payload).data.quitStream) resolve(); }, { tools: [" react ", "react", "", "describe_tool"] });
+            });
+            await new Promise<void>((resolve) => {
+                convo.send("hello", (chunk) => { if ((chunk as Payload).data.quitStream) resolve(); }, { tools: [] });
+            });
+            await new Promise<void>((resolve) => {
+                convo.send("hello", (chunk) => { if ((chunk as Payload).data.quitStream) resolve(); }, { tools: ["  "] });
+            });
+
+            expect(requests[0].searchParams.get("tools")).toBe("react,describe_tool");
+            expect(requests[1].searchParams.has("tools")).toBe(false);
+            expect(requests[2].searchParams.has("tools")).toBe(false);
+
+            // A comma would read as two ids on the wire, so it never reaches it.
+            expect(() => convo.send("hello", () => undefined, { tools: ["re,act"] })).toThrow("may not contain a comma");
+        } finally {
+            server.stop(true);
+        }
+    });
+
     it("sends a turn's context as one JSON parameter, and none when it is empty", async () => {
         const { server, requests, url } = sseServer([completion(), completion(), completion()]);
         const context = [
@@ -207,7 +234,7 @@ describe("Conversations over SSE", () => {
         try {
             const convo = new Conversation({ apiKey: "ap-abc_123", serverUrl: url, convoPath: "/chat" });
 
-            for (const key of ["message", "api_key", "chatId", "wake", "context"]) {
+            for (const key of ["message", "api_key", "chatId", "wake", "tools", "context"]) {
                 expect(() => convo.send("hello", () => undefined, { extra: { [key]: "x" } }))
                     .toThrow(`may not set "${key}"`);
             }
