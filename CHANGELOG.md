@@ -2,15 +2,10 @@
 
 Every release of `@butlerbot/sdk`, newest first.
 
-Versions are `0.MINOR.PATCH`. Until 1.0, a minor release may change behaviour a caller relies
-on, and says so under **Changed**; a patch release only fixes or adds. A consumer's range is
-`^0.MINOR.0`, which takes every patch of that minor and no new minor, so a fix no longer needs
-a commit in every consumer.
+Versions are `0.0.PATCH`, and every release bumps the patch number, whatever it changes. A
+release that changes behaviour a caller relies on says so under **Changed**.
 
-## 0.1.0 (unreleased)
-
-The first release on `0.MINOR.PATCH`; everything before it was `0.0.x`, where a caret range pins
-one exact version.
+## 0.0.49 (unreleased)
 
 ### Changed
 
