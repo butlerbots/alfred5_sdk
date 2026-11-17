@@ -17,6 +17,8 @@ export type RequestFailResponseV4 = {
         error: string;
         /** User facing message */
         message: string;
+        /** The HTTP status, when the stream failed on one before the server said anything */
+        status?: number;
     } & RequestBaseResponsePayloadV4;
 }
 

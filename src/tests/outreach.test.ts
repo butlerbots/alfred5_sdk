@@ -4,7 +4,7 @@ import { ButlerBotClient, ButlerBotAPIError } from "../index";
 import { CONFIG } from "../config";
 import { answerDelivery, listDeliveries } from "../modules/outreach";
 import { isDeliveryOpen, type Delivery } from "../types/outreach";
-import { fakeFetch, pathOf, queryOf, type FakeFetch } from "./support/fake_fetch";
+import { fakeFetch, keyOf, pathOf, queryOf, type FakeFetch } from "./support/fake_fetch";
 
 // =============================================
 // THE INBOX OVER HTTP
@@ -51,7 +51,8 @@ describe("Listing deliveries", () => {
         const call = http.only();
         expect(call.method).toBe("GET");
         expect(pathOf(call)).toBe(`https://core.test${CONFIG.paths.outreach.base}`);
-        expect(queryOf(call)).toEqual({ api_key: KEY, page: "3", limit: "10" });
+        expect(queryOf(call)).toEqual({ page: "3", limit: "10" });
+        expect(keyOf(call)).toBe(KEY);
         expect(listed.deliveries[0].deliveryId).toBe("delivery_1");
         expect(listed.deliveries[0].surfaces[0].surface).toBe("discord");
         expect(listed.total).toBe(21);
@@ -62,7 +63,8 @@ describe("Listing deliveries", () => {
 
         await listDeliveries({ apiKey: KEY });
 
-        expect(queryOf(http.only())).toEqual({ api_key: KEY });
+        expect(queryOf(http.only())).toEqual({});
+        expect(keyOf(http.only())).toBe(KEY);
         expect(pathOf(http.only())).toBe(`${CONFIG.server}${CONFIG.paths.outreach.base}`);
     });
 });
@@ -172,7 +174,7 @@ describe("Through the client", () => {
         await client.listDeliveries();
 
         expect(pathOf(http.only())).toBe("https://core.test/api/outreach");
-        expect(queryOf(http.only()).api_key).toBe(KEY);
+        expect(keyOf(http.only())).toBe(KEY);
     });
 
     it("carries a call's own key over the client's", async () => {
@@ -181,6 +183,6 @@ describe("Through the client", () => {
 
         await client.answerDelivery({ deliveryId: "delivery_1", text: "Yes", apiKey: "ap-other_999" });
 
-        expect(queryOf(http.only()).api_key).toBe("ap-other_999");
+        expect(keyOf(http.only())).toBe("ap-other_999");
     });
 });

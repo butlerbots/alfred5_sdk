@@ -2,7 +2,7 @@ import { EventSource } from "eventsource";
 import { CONFIG, APIPath } from "../config";
 import type { Link } from "../link/link";
 import { Emitter } from "../util/emitter";
-import { ConversationStream, ConversationTransport, SteerResult, TurnStopMode, TurnStopped } from "./transport";
+import { ConversationStream, ConversationTransport, SteerResult, TurnStopMode, TurnStopped, failurePayload } from "./transport";
 import { createStreamAccumulator } from "./stream_accumulator";
 import { LinkConversationTransport } from "./transport_link";
 import { SSEConversationTransport, streamSSE } from "./transport_sse";
@@ -11,7 +11,9 @@ import { RequestResponseV5 } from "../types/response/v5/dialogue_response_v5";
 import { ConversationStateResponse } from "../types/state/convo_state_response";
 import { ConversationAddress } from "../types/conversation/address";
 import { MessageContextItem } from "../types/conversation/context";
-import { formatURL } from "../util/url_formatter";
+import { authHeaders, formatURL } from "../util/url_formatter";
+import { ButlerBotAPIError } from "../util/api_error";
+import { ButlerBotTurnError } from "../util/turn_error";
 import { TurnProgressEntry } from "../types/response/v4/turn_registry_v4";
 import { TurnProgressEntryV5 } from "../types/response/v5/turn_registry_v5";
 
@@ -77,6 +79,34 @@ export type DialogueRequestParams = {
 
 export type DialogueRequestOptions = Omit<Omit<DialogueRequestParams, "message">, "chatId">;
 
+/**
+ * How long a turn's stream may stay silent before it is given up, in milliseconds. Each is off
+ * when unset.
+ *
+ * A turn that times out ends with a failure payload whose code is `SDK_TIMEOUT`, and `ask()`
+ * rejects with it. Only the stream is closed: the turn itself goes on running on the server and
+ * its reply is still saved to the conversation, so `fetchProgressStream()` can pick it back up
+ * and `stop()` can still stop it.
+ */
+export type TurnTimeout = {
+    /**
+     * The longest to wait for the first event. The server's first event says which conversation
+     * the turn is in and is sent before anything slow, so a few tens of seconds is generous.
+     */
+    firstEventMs?: number;
+    /**
+     * The longest to wait between one event and the next once the turn is streaming. A tool can
+     * run for minutes between events, so set this well above the longest one you expect.
+     */
+    idleMs?: number;
+};
+
+/** What a single `send()` or `ask()` may set beside the turn's own parameters. */
+export type SendOptions = DialogueRequestOptions & {
+    /** Overrides the conversation's `timeout` for this one turn. */
+    timeout?: TurnTimeout;
+};
+
 export interface RequestResponseByVersion {
     v3: RequestResponseV3;
     v4: RequestResponseV4;
@@ -135,6 +165,17 @@ export type ConversationOptions<V extends APIPath = "v4"> = {
      * want nothing between you and the socket.
      */
     accumulateStream?: boolean;
+    /**
+     * How long a turn's stream may stay silent before it is given up; see `TurnTimeout`. Off by
+     * default. A single `send()` or `ask()` can pass its own.
+     */
+    timeout?: TurnTimeout;
+    /**
+     * How a turn is sent over SSE. `"POST"` (the default) sends the parameters as a JSON body;
+     * `"GET"` sends them as a query, for a self-hosted server older than POST turns. The key
+     * travels in the `Authorization` header either way.
+     */
+    turnMethod?: "POST" | "GET";
 }
 
 const DEFAULT_CONVO_API_V: APIPath = "v4";
@@ -148,6 +189,7 @@ export class Conversation<V extends APIPath = "v4"> {
     private events = new Emitter<{ convoId: [string] }>();
     private transport: ConversationTransport;
     private accumulateStream: boolean;
+    private timeout?: TurnTimeout;
     /** The link carrying this conversation, when it is not on SSE. */
     readonly link?: Link;
 
@@ -181,6 +223,7 @@ export class Conversation<V extends APIPath = "v4"> {
         this.apiKey = config.apiKey;
         this.debug = config.debug || false;
         this.accumulateStream = config.accumulateStream ?? true;
+        this.timeout = config.timeout;
 
         if (config.transport && config.transport !== "sse") {
             this.link = config.transport;
@@ -198,6 +241,7 @@ export class Conversation<V extends APIPath = "v4"> {
                 steerEndpoint: () => this.endpoints.steer,
                 apiKey: this.apiKey,
                 debug: this.debug,
+                method: config.turnMethod,
             });
         }
     }
@@ -368,17 +412,17 @@ export class Conversation<V extends APIPath = "v4"> {
 
     // GETTERS
 
-    /** Fetches the conversation state from the server, including message history and metadata */
+    /**
+     * Fetches the conversation state from the server, including message history and metadata.
+     * Throws a `ButlerBotAPIError` when the server refuses or fails.
+     */
     async fetchState() {
         if (!this.convoId) throw new Error("Conversation ID is not set");
 
-        const url = formatURL(`${this.endpoints.history}/${this.convoId}`, undefined, { apiKey: this.apiKey, debug: this.debug });
-        const response = await fetch(url);
+        const url = formatURL(`${this.endpoints.history}/${this.convoId}`, {}, { debug: this.debug });
+        const response = await fetch(url, { headers: authHeaders(this.apiKey) });
 
-        if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(`Failed to fetch conversation state: ${response.status} ${response.statusText} - ${errorText}`);
-        }
+        if (!response.ok) throw await apiError("fetch conversation state", response);
 
         const data = await response.json() as ConversationStateResponse;
         return data;
@@ -412,30 +456,30 @@ export class Conversation<V extends APIPath = "v4"> {
             });
         }
 
-        const url = formatURL(this.endpoints.progressStream, { chatId: this.convoId }, { apiKey: this.apiKey, debug: this.debug });
-        return streamSSE(url, { debug: this.debug, onPayload: receive });
+        const url = formatURL(this.endpoints.progressStream, { chatId: this.convoId }, { debug: this.debug });
+        return streamSSE(url, { debug: this.debug, apiKey: this.apiKey, onPayload: receive });
     }
 
-    /** 
-     * Fetches the conversation progress from the server 
-     * Returns undefined if no active turn progress
+    /**
+     * Fetches the conversation progress from the server.
+     * Returns undefined if no active turn progress; throws a `ButlerBotAPIError` when the server
+     * refuses or fails.
     */
     async fetchProgress(options?: { lastEventId?: string, includeCompleted?: boolean }): Promise<TurnProgressEntryForVersion<V>[] | undefined> {
         if (!this.convoId) throw new Error("Conversation ID is not set");
 
-        const payload: Record<string, any> = {
+        const payload: Record<string, string> = {
             chatId: this.convoId,
         }
 
-        if (options?.includeCompleted !== undefined) payload["includeCompleted"] = options.includeCompleted;
+        if (options?.includeCompleted !== undefined) payload["includeCompleted"] = String(options.includeCompleted);
 
-        const url = formatURL(this.endpoints.progress, payload, { apiKey: this.apiKey, debug: this.debug });
-        const response = await fetch(url, { headers: options?.lastEventId ? { "last-event-id": options.lastEventId } : undefined });
+        const url = formatURL(this.endpoints.progress, payload, { debug: this.debug });
+        const response = await fetch(url, {
+            headers: { ...authHeaders(this.apiKey), ...(options?.lastEventId ? { "last-event-id": options.lastEventId } : {}) },
+        });
 
-        if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(`Failed to fetch conversation progress: ${response.status} ${response.statusText} - ${errorText}`);
-        }
+        if (!response.ok) throw await apiError("fetch conversation progress", response);
 
         if (response.status === 204) return undefined; // No content
 
@@ -458,23 +502,80 @@ export class Conversation<V extends APIPath = "v4"> {
         return (payload) => cb(accumulate(payload) as RequestResponseByVersion[V]);
     }
 
-    /** Sends a message into the conversation */
-    send(message: string, cb: (chunk: RequestResponseByVersion[V]) => any, options?: DialogueRequestOptions): ConversationStream {
+    /**
+     * Sends a message into the conversation.
+     *
+     * Every turn's stream ends with a payload carrying `quitStream`. A failed one is
+     * `success: false` with a `code` (see `TURN_ERROR_CODES`): the server's, or the SDK's when
+     * the stream itself failed — a refused key or parameter, a server that cannot be reached, or
+     * the `timeout` passing.
+     */
+    send(message: string, cb: (chunk: RequestResponseByVersion[V]) => any, options?: SendOptions): ConversationStream {
+        const { timeout: turnTimeout, ...turnOptions } = options ?? {};
+        const timeout = turnTimeout ?? this.timeout;
         const receive = this.receiver(cb);
 
-        return this.transport.send({
-            message,
-            ...this.options, // options set for convo
-            ...options,      // overwrite convo's for this call
-            ...(this.convoId ? { chatId: this.convoId } : {}),
-        }, {
-            payload: receive,
-            convoId: (convoId) => {
-                if (this.convoId === convoId) return;
-                this.convoId = convoId;
-                this.events.emit("convoId", convoId);
+        // The watchdog: armed for the first event, re-armed for each next one, and spent on the
+        // last. When it fires the stream is closed and the caller is handed the failure itself.
+        let finished = false;
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        let stream: ConversationStream | undefined;
+        const disarm = () => { if (timer) clearTimeout(timer); timer = undefined; };
+        const arm = (ms: number | undefined, waitingFor: string) => {
+            disarm();
+            if (!ms || ms <= 0) return;
+            timer = setTimeout(() => {
+                if (finished) return;
+                finished = true;
+                stream?.close();
+                receive(failurePayload(
+                    "SDK_TIMEOUT",
+                    `No ${waitingFor} from the server within ${ms} ms. The turn may still be running.`,
+                    "I'm afraid my server is taking too long to answer. Please try again in a moment.",
+                    this.convoId,
+                ));
+            }, ms);
+        };
+
+        arm(timeout?.firstEventMs, "first event");
+
+        try {
+            stream = this.transport.send({
+                message,
+                ...this.options, // options set for convo
+                ...turnOptions,  // overwrite convo's for this call
+                ...(this.convoId ? { chatId: this.convoId } : {}),
+            }, {
+                payload: (payload) => {
+                    if (finished) return;
+                    if ((payload as { data?: { quitStream?: boolean } }).data?.quitStream) {
+                        finished = true;
+                        disarm();
+                    } else {
+                        arm(timeout?.idleMs, "event");
+                    }
+                    receive(payload);
+                },
+                convoId: (convoId) => {
+                    if (this.convoId === convoId) return;
+                    this.convoId = convoId;
+                    this.events.emit("convoId", convoId);
+                },
+            });
+        } catch (error) {
+            disarm();
+            throw error;
+        }
+
+        const opened = stream;
+        return {
+            ...opened,
+            close: () => {
+                finished = true;
+                disarm();
+                opened.close();
             },
-        });
+        };
     }
 
     /**
@@ -519,19 +620,29 @@ export class Conversation<V extends APIPath = "v4"> {
      * Sends a message and resolves with the finished reply.
      *
      * For when you want the answer rather than the stream. Every event still arrives
-     * through `onEvent` if you pass one.
+     * through `onEvent` if you pass one. Rejects with a `ButlerBotTurnError` when the turn
+     * fails, including when its stream fails or times out, so the promise always settles.
      */
-    ask(message: string, options?: DialogueRequestOptions & { onEvent?: (chunk: RequestResponseByVersion[V]) => any }) {
+    ask(message: string, options?: SendOptions & { onEvent?: (chunk: RequestResponseByVersion[V]) => any }) {
         return new Promise<{ text: string; convoId?: string; events: RequestResponseByVersion[V][] }>((resolve, reject) => {
             const events: RequestResponseByVersion[V][] = [];
             let text = "";
 
+            const { onEvent: _onEvent, ...sendOptions } = options ?? {};
             this.send(message, (chunk) => {
                 events.push(chunk);
                 options?.onEvent?.(chunk);
 
                 if (!chunk.success) {
-                    reject(new Error(chunk.data.message || chunk.data.error || chunk.data.code));
+                    const data = chunk.data as { code: string; error?: string; message?: string; status?: number };
+                    reject(new ButlerBotTurnError({
+                        code: data.code,
+                        error: data.error,
+                        message: data.message,
+                        status: data.status,
+                        convoId: this.convoId,
+                        payload: chunk,
+                    }));
                     return;
                 }
 
@@ -547,7 +658,23 @@ export class Conversation<V extends APIPath = "v4"> {
                 }
 
                 if (chunk.data.quitStream) resolve({ text, convoId: this.convoId, events });
-            }, options);
+            }, sendOptions);
         });
     }
+}
+
+/** A refused or failed JSON read, as the `ButlerBotAPIError` every other call throws. */
+async function apiError(action: string, response: Response): Promise<ButlerBotAPIError> {
+    const text = await response.text().catch(() => "");
+    let body: unknown = text;
+    try { body = text ? JSON.parse(text) : undefined; } catch { /* kept as the text it was */ }
+    const envelope = (body && typeof body === "object" ? body : {}) as { error?: string; errormessage?: string };
+    return new ButlerBotAPIError({
+        action,
+        status: response.status,
+        statusText: response.statusText,
+        error: typeof envelope.error === "string" ? envelope.error : undefined,
+        errormessage: typeof envelope.errormessage === "string" ? envelope.errormessage : undefined,
+        body,
+    });
 }
