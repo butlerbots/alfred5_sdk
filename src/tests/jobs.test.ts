@@ -4,7 +4,7 @@ import { ButlerBotClient, ButlerBotAPIError } from "../index";
 import { CONFIG } from "../config";
 import { cancelJob, getJob, getJobJournal, listJobs, resumeJob, setPhaseModel, updateJob, updateJobSettings } from "../modules/jobs";
 import type { JobView } from "../types/jobs";
-import { fakeFetch, pathOf, queryOf, type FakeFetch } from "./support/fake_fetch";
+import { fakeFetch, keyOf, pathOf, queryOf, type FakeFetch } from "./support/fake_fetch";
 
 // =============================================
 // JOBS OVER HTTP
@@ -63,7 +63,8 @@ describe("Listing jobs", () => {
         const call = http.only();
         expect(call.method).toBe("GET");
         expect(pathOf(call)).toBe(`https://core.test${CONFIG.paths.jobs.base}`);
-        expect(queryOf(call)).toEqual({ api_key: KEY, page: "2", limit: "5", status: "running" });
+        expect(queryOf(call)).toEqual({ page: "2", limit: "5", status: "running" });
+        expect(keyOf(call)).toBe(KEY);
         expect(listed.jobs[0].jobId).toBe("job_1");
         expect(listed.total).toBe(11);
         expect(listed.allowance).toEqual({ perDayUsd: 5, source: "tier", remainingUsd: 4.5 });
@@ -76,7 +77,8 @@ describe("Listing jobs", () => {
 
         const listed = await listJobs({ apiKey: KEY });
 
-        expect(queryOf(http.only())).toEqual({ api_key: KEY });
+        expect(queryOf(http.only())).toEqual({});
+        expect(keyOf(http.only())).toBe(KEY);
         expect(listed.allowance).toEqual({ perDayUsd: 0, source: null, refused: "tier", message: "Jobs are not in your plan" });
     });
 
@@ -198,7 +200,8 @@ describe("Resuming a job", () => {
         const call = http.only();
         expect(call.method).toBe("POST");
         expect(pathOf(call)).toBe("https://core.test/api/jobs/job_1/resume");
-        expect(queryOf(call)).toMatchObject({ api_key: KEY });
+        expect(queryOf(call).api_key).toBeUndefined();
+        expect(keyOf(call)).toBe(KEY);
         expect(call.body).toBeUndefined();
         expect(resumed.resumed).toBe(true);
         expect(resumed.reason).toBe("resumed");
@@ -328,7 +331,8 @@ describe("Job settings", () => {
         const call = http.only();
         expect(call.method).toBe("PATCH");
         expect(pathOf(call)).toBe(`https://core.test${CONFIG.paths.jobs.settings}`);
-        expect(queryOf(call)).toEqual({ api_key: KEY });
+        expect(queryOf(call)).toEqual({});
+        expect(keyOf(call)).toBe(KEY);
         // Null is a value — it clears a setting — so it is sent, while an absent field is not.
         expect(call.body).toEqual({ allowanceUsd: 5, alwaysAsk: null });
         expect(saved.jobs.allowanceUsd).toBe(5);
@@ -343,7 +347,7 @@ describe("Through the client", () => {
         await client.listJobs();
 
         expect(pathOf(http.only())).toBe("https://core.test/api/jobs");
-        expect(queryOf(http.only()).api_key).toBe(KEY);
+        expect(keyOf(http.only())).toBe(KEY);
     });
 
     it("keeps the client's key when a caller forwards an option nobody set", async () => {
@@ -352,7 +356,7 @@ describe("Through the client", () => {
 
         await client.getJob({ jobId: "job_1", apiKey: undefined, serverURL: undefined });
 
-        expect(queryOf(http.only()).api_key).toBe(KEY);
+        expect(keyOf(http.only())).toBe(KEY);
         expect(pathOf(http.only())).toBe("https://core.test/api/jobs/job_1");
     });
 });

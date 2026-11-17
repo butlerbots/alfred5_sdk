@@ -73,3 +73,9 @@ export function pathOf(call: RecordedCall): string {
     const url = new URL(call.url);
     return `${url.origin}${url.pathname}`;
 }
+
+/** The API key a recorded call sent in its `Authorization` header, if any. */
+export function keyOf(call: RecordedCall): string | undefined {
+    const header = Object.entries(call.headers).find(([name]) => name.toLowerCase() === "authorization")?.[1];
+    return header?.startsWith("Bearer ") ? header.slice("Bearer ".length) : header;
+}

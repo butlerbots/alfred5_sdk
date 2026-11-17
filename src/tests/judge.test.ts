@@ -4,7 +4,7 @@ import { ButlerBotClient, ButlerBotAPIError } from "../index";
 import { CONFIG } from "../config";
 import { judge } from "../modules/judge";
 import type { JudgeAnswers, JudgeBooleanAnswer, JudgeChoiceAnswer, JudgeScoreAnswer } from "../types/judge";
-import { fakeFetch, pathOf, queryOf, type FakeFetch } from "./support/fake_fetch";
+import { fakeFetch, keyOf, pathOf, queryOf, type FakeFetch } from "./support/fake_fetch";
 
 // =============================================
 // THE JUDGE OVER HTTP
@@ -59,7 +59,8 @@ describe("Asking the judge", () => {
         const call = http.only();
         expect(call.method).toBe("POST");
         expect(pathOf(call)).toBe(`https://core.test${CONFIG.paths.judge.base}`);
-        expect(queryOf(call)).toEqual({ api_key: KEY });
+        expect(queryOf(call)).toEqual({});
+        expect(keyOf(call)).toBe(KEY);
         expect(call.body).toEqual({ state, questions: QUESTIONS });
 
         expect(verdict).toEqual({ answers: ANSWERS, model: "typesafe/jev-1.13", costUsd: 0.00042 });
@@ -135,7 +136,8 @@ describe("The client", () => {
         const { answers, costUsd } = await client.judge({ state: "a message", questions: { hostile: QUESTIONS.hostile } });
 
         expect(pathOf(http.only())).toBe("https://core.test/api/judge");
-        expect(queryOf(http.only())).toEqual({ api_key: KEY });
+        expect(queryOf(http.only())).toEqual({});
+        expect(keyOf(http.only())).toBe(KEY);
         expect(answers.hostile.value).toBe(true);
         expect(costUsd).toBe(0.0001);
     });

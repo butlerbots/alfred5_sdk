@@ -247,13 +247,15 @@ export function completedPayload(convoId?: string) {
     };
 }
 
-export function failurePayload(code: string, error: string, message: string, convoId?: string) {
+/** The terminal payload of a turn that failed. `status` is the HTTP status, when there was one. */
+export function failurePayload(code: string, error: string, message: string, convoId?: string, status?: number) {
     return {
         success: false as const,
         data: {
             code,
             error,
             message,
+            ...(status !== undefined ? { status } : {}),
             ...(convoId ? { convoId } : {}),
             quitStream: true,
         },
