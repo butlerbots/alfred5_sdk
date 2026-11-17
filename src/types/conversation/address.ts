@@ -21,6 +21,11 @@ export type ConversationAddress = DiscordAddress;
 export type DiscordAddress = {
     platform: "discord";
     channelId: string;
+    /**
+     * The server (guild) the channel belongs to, absent in direct messages. It lets a persona
+     * the user set for that server apply to every channel in it.
+     */
+    guildId?: string;
     threadId?: string;
     /**
      * The message the conversation was last held at — the user's most recent message in it.

@@ -32,6 +32,8 @@ release that changes behaviour a caller relies on says so under **Changed**.
 
 ### Added
 
+- `guildId` on `DiscordAddress`: the server a Discord channel belongs to, so a persona set for
+  that server applies across its channels.
 - `timeout: { firstEventMs, idleMs }` on `createConversation()` and on each `send()`/`ask()`:
   a silent stream ends with `SDK_TIMEOUT`. Off unless set. Only the stream gives up; the turn
   goes on and `fetchProgressStream()` picks it back up.
