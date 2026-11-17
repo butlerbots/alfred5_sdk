@@ -1,4 +1,5 @@
 import { ButlerBotAPIError } from "../util/api_error";
+import { authHeaders } from "../util/url_formatter";
 
 /** What every JSON route on the server answers with, success or not. */
 type APIEnvelope = {
@@ -9,6 +10,8 @@ type APIEnvelope = {
 
 export type APIRequestOptions = {
     url: string;
+    /** Sent as the `Authorization` header, never in the URL. */
+    apiKey: string;
     /** GET when nothing says otherwise. */
     method?: "GET" | "POST" | "PATCH" | "DELETE";
     /** Sent as JSON. A route that takes no body is called without one. */
@@ -26,10 +29,11 @@ export type APIRequestOptions = {
  * and a response body can only be consumed once.
  */
 export async function requestAPI<T>(options: APIRequestOptions): Promise<T> {
-    const init: RequestInit = { method: options.method || "GET" };
+    const headers: Record<string, string> = authHeaders(options.apiKey);
+    const init: RequestInit = { method: options.method || "GET", headers };
 
     if (options.body !== undefined) {
-        init.headers = { "Content-Type": "application/json" };
+        headers["Content-Type"] = "application/json";
         init.body = JSON.stringify(options.body);
     }
 

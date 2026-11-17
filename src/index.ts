@@ -189,6 +189,9 @@ export type {
     TransportHandlers,
 } from "./modules/transport";
 export { ButlerBotAPIError } from "./util/api_error";
+export { ButlerBotTurnError } from "./util/turn_error";
+export type { DialogueRequestOptions, DialogueRequestParams, SendOptions, TurnTimeout } from "./modules/conversation";
+export { STREAM_RECONNECT_ATTEMPTS } from "./modules/transport_sse";
 export { listJobs, getJob, cancelJob, resumeJob, updateJob, updateJobSettings } from "./modules/jobs";
 export type {
     JobsRequestOptions,

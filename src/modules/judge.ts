@@ -39,11 +39,12 @@ export async function judge<Q extends JudgeQuestions>(options: JudgeOptions<Q>):
     const url = formatURL(
         (options.serverURL || CONFIG.server) + (options.path || CONFIG.paths.judge.base),
         {},
-        { apiKey: options.apiKey, debug: options.debug },
+        { debug: options.debug },
     );
 
     const response = await requestAPI<JudgeResponse<Q>>({
         url,
+        apiKey: options.apiKey,
         method: "POST",
         body: { state: options.state, questions: options.questions },
         action: "ask the judge",

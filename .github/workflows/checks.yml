@@ -1,0 +1,34 @@
+name: Checks
+
+# Every consumer (the website, the Discord bot) installs this package from npm, so a change that
+# does not compile, or that breaks a payload a consumer reads, is found there, a release later.
+# This runs what the release would ship before it merges: the install the lockfile pins, the
+# typecheck, the suite and the build that `npm publish` packs.
+#
+# The install is pnpm's, frozen against `pnpm-lock.yaml`, never `npm install`; the tests run on
+# bun (`bun test`).
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+jobs:
+  checks:
+    name: Typecheck, tests and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: oven-sh/setup-bun@v2
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run typecheck
+      - run: pnpm test
+      - run: pnpm run build

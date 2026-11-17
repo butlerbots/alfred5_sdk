@@ -45,10 +45,10 @@ export async function listDeliveries(options: ListDeliveriesOptions): Promise<De
     const url = formatURL(
         outreachBase(options),
         query({ page: options.page, limit: options.limit }),
-        { apiKey: options.apiKey, debug: options.debug },
+        { debug: options.debug },
     );
 
-    return requestAPI<DeliveryListResponse>({ url, action: "list deliveries" });
+    return requestAPI<DeliveryListResponse>({ url, apiKey: options.apiKey, action: "list deliveries" });
 }
 
 /**
@@ -61,11 +61,12 @@ export async function answerDelivery(options: AnswerDeliveryOptions): Promise<De
     const url = formatURL(
         `${outreachBase(options)}/${encodeURIComponent(options.deliveryId)}/answer`,
         {},
-        { apiKey: options.apiKey, debug: options.debug },
+        { debug: options.debug },
     );
 
     return requestAPI<DeliveryAnswerResponse>({
         url,
+        apiKey: options.apiKey,
         method: "POST",
         body: options.decision === undefined ? { text: options.text } : { text: options.text, decision: options.decision },
         action: `answer delivery ${options.deliveryId}`,

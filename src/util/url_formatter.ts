@@ -1,20 +1,20 @@
-export function formatURL(url: string, params: Object = {}, config: { apiKey: string, debug?: boolean }) {
-    const fParams: { api_key: string } = {
-        api_key: config.apiKey,
-        ...params
-    }
-    const paramQuery = new URLSearchParams(fParams as any).toString();
-    const fUrl = `${url}?${paramQuery}`;
+/**
+ * A server URL with its query.
+ *
+ * The API key is never part of it: a URL lands in access logs, proxy logs and browser history,
+ * so the key travels in the `Authorization` header instead (`authHeaders`), which every route
+ * that takes a key reads.
+ */
+export function formatURL(url: string, params: Record<string, string> = {}, config: { debug?: boolean } = {}) {
+    const paramQuery = new URLSearchParams(params).toString();
+    const fUrl = paramQuery ? `${url}?${paramQuery}` : url;
 
-    if (config.debug) {
-        const debugUrl = new URL(fUrl);
-        const apiKey = debugUrl.searchParams.get('api_key');
-        if (apiKey) {
-            const obscuredKey = apiKey.length > 6 ? `${apiKey.slice(0, 3)}...${apiKey.slice(-3)}` : '***';
-            debugUrl.searchParams.set('api_key', obscuredKey);
-        }
-        console.log(`[Formatting URL ${debugUrl.toString()}]`);
-    }
+    if (config.debug) console.log(`[Formatting URL ${fUrl}]`);
 
     return fUrl;
+}
+
+/** The header that carries an API key to the server. */
+export function authHeaders(apiKey: string): Record<string, string> {
+    return { Authorization: `Bearer ${apiKey}` };
 }

@@ -1,6 +1,8 @@
-# ButlerBot SDK
+# Butler SDK
 
-ButlerBot SDK is a JavaScript library that provides a simple way to interact with the [Butler](https://butler.now/) API.
+The Butler SDK (`@butlerbot/sdk`) is a JavaScript library for talking to Alfred through the [Butler](https://butler.now/) API.
+
+What changed between releases is in [CHANGELOG.md](./CHANGELOG.md).
 
 ## Quickstart
 
@@ -38,6 +40,122 @@ Or, when you only want the answer:
 ```typescript
 const { text } = await convo.ask("Hey there Alfred!");
 ```
+
+A turn is a POST to the chat endpoint with its parameters as a JSON body and your key in the
+`Authorization` header, streamed back as server-sent events; no URL the SDK builds carries the
+key. Against a self-hosted server older than POST turns, pass `turnMethod: "GET"` to
+`createConversation()` to send the parameters as a query instead.
+
+### What a turn can carry
+
+Set on the conversation, these apply to every turn until changed:
+
+```typescript
+convo
+  .setModel("Butler-Auto-Smart")        // the model for the next turns
+  .setInstructions("Answer in French")  // location-specific instructions
+  .setPlatform("discord")               // where the user is talking from
+  .setAddress({ platform: "discord", channelId: "123", threadId: "456", messageId: "789" });
+```
+
+`setAddress` names where on the platform the conversation lives, which is where anything Alfred
+says later, outside a turn, is delivered. An address is whole: a new one replaces the old rather
+than merging into it, so a conversation that left a thread stops naming it. It must name the same
+platform as `setPlatform`, or the turn is refused.
+
+Passed per `send()` or `ask()`, these belong to the one turn:
+
+```typescript
+await convo.ask("What did Sam ask?", {
+  wake: "You are joining because a rule of the user's matched: deploy failed",
+  tools: ["react"],
+  context: [{ kind: "reply", title: "Replying to Sam", text: "Sam: what time does the store close?" }],
+  timeout: { firstEventMs: 30_000 },
+});
+```
+
+- `wake`: why Alfred is speaking, when something other than the message is the reason. A line
+  for this turn's system prompt, never written to the conversation; at most 500 characters.
+- `tools`: tool ids to switch on for this turn that the user could reach but has off unless asked
+  for. Activation, never a grant: the user's plan and own settings still apply, and an id the
+  server does not know is refused with the nearest real ones.
+- `context`: what the platform attaches beside the message, never inside it: what it replies to
+  (`reply`), who it mentions (`mentions`), where it was sent (`place`). At most 8 items, an
+  80-character title and a 4,000-character text each, 12,000 characters in all; the server
+  refuses a turn over a bound rather than clipping it.
+- `extra`: further parameters forwarded to the server as they are, for a parameter newer than
+  this SDK. A key the SDK already sends (`RESERVED_TURN_FIELDS`) is refused before anything is
+  sent.
+- `timeout`: see [When a turn fails](#when-a-turn-fails).
+
+### Stopping and steering a turn
+
+```typescript
+const stopped = await convo.stop();         // soft: finish the call in flight, then stop
+await convo.stop("hard");                  // cut the stream off mid-sentence, tools with it
+
+const steered = await convo.steer("Actually, make it Tuesday");
+if (!steered.ok && steered.reason === "too_late") await convo.ask("Actually, make it Tuesday");
+```
+
+`stop()` stops the turn running in the conversation. `soft` (the default) keeps the answer so
+far and works on every model; `hard` only stops the bill where the provider supports
+cancellation, so the server may apply a soft stop instead, and the returned `mode` says which
+you got. `undefined` means nothing was running. Either way the turn's stream ends as it always
+does, carrying what was written before the stop.
+
+`steer()` says something to the turn that is still running; the model reads it at its next step
+as the user talking mid-task. Check the result: `too_late` means the turn was already stopping
+or over and the message was **not** delivered, so send it as an ordinary turn. Dropping it is
+never right.
+
+Closing a stream is not a stop: `close()` stops delivery to you, and the turn goes on running
+and is saved. Both transports support `stop()` and `steer()`.
+
+### When a turn fails
+
+Every turn's stream ends with a payload carrying `quitStream`, so `ask()` always settles. A
+failed turn's last payload is `success: false` with a `code`, an `error` for you and a `message`
+written for the user; `ask()` rejects with a `ButlerBotTurnError` carrying the same:
+
+```typescript
+import { ButlerBotTurnError } from "@butlerbot/sdk";
+
+try {
+  await convo.ask("hello", { timeout: { firstEventMs: 30_000, idleMs: 300_000 } });
+} catch (error) {
+  if (!(error instanceof ButlerBotTurnError)) throw error;
+  if (error.code === "DG_TURN_IN_PROGRESS") { /* wait, or steer() the message in */ }
+  else if (error.code === "SDK_UNAUTHORIZED") { /* the key was refused */ }
+  else console.warn(error.code, error.status, error.error);
+}
+```
+
+`ErrorCode` offers every code this SDK knows by name (`TURN_ERROR_CODES`) and still accepts any
+other string a newer server sends. Branch on the code, never on the message. The codes come from
+three places:
+
+- **The server** (`DG_*`, `CORE_AI_*`, `NO_AUTH`, `INTERNAL_ERROR`): the turn was refused or
+  failed while it ran. `DG_TURN_IN_PROGRESS` is a conversation already answering;
+  `DG_SERVER_DRAINING` is a server restarting, so send again in a few seconds.
+- **The stream** (`SDK_*`), when it failed before the server said anything: a refusal carries
+  the HTTP `status` and what the server said (`SDK_UNAUTHORIZED` 401, `SDK_FORBIDDEN` 403 with
+  the missing scope, `SDK_BAD_REQUEST` 400 with each refused parameter, `SDK_RATE_LIMITED` 429,
+  `SDK_HTTP_ERROR` otherwise); `SDK_STREAM_CLOSED` is a stream the server ended for good without
+  finishing; `SDK_UNREACHABLE` is a server that could not be reached `STREAM_RECONNECT_ATTEMPTS`
+  times in a row; `SDK_TIMEOUT` is the `timeout` passing.
+- **A Link** (lower case: `link_error`, `disconnected`, `timeout`, ...).
+
+A dropped connection is not a failure: the stream reconnects with the last event it gave you
+and carries on, as it does when the platform deploys mid-turn. `timeout` is off unless you set
+it, on the conversation (`createConversation({ timeout })`) or per turn: `firstEventMs` is the
+longest to wait for the first event, which the server sends before anything slow, and `idleMs`
+the longest between events once streaming, which should be well above the longest tool call you
+expect. After `SDK_TIMEOUT` or `SDK_UNREACHABLE` only the stream gave up: the turn may still be
+running, and `fetchProgressStream()` picks it back up.
+
+`fetchState()`, `fetchProgress()` and `getUsagePolicyData()` throw `ButlerBotAPIError`, as the
+jobs, outreach and judge calls do (see [When a call fails](#when-a-call-fails)).
 
 ### Streaming
 
@@ -319,8 +437,8 @@ the conversation's start — everything a client that arrived late needs to draw
 from the beginning. Pass `{ afterEventId }` to be sent only what you have not already
 seen. A conversation with nothing running simply ends the stream.
 
-Neither transport can cancel a turn: `close()` stops delivery locally, and the reply is
-still generated and stored.
+Closing a stream never cancels the turn: `close()` stops delivery locally, and the reply is
+still generated and stored. To stop the turn itself, use `stop()`.
 
 ## Jobs
 
@@ -474,8 +592,8 @@ sends the service and credential as subprotocols instead of putting the key in t
 ## Development
 
 ```bash
-npm install
-npm test         # bun test
-npm run typecheck
-npm run build
+pnpm install --frozen-lockfile
+pnpm test        # bun test
+pnpm typecheck
+pnpm build
 ```

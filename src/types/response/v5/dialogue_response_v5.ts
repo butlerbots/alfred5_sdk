@@ -7,6 +7,8 @@ export type RequestFailResponseV5 = {
         code: ErrorCode;
         error: string;
         message: string;
+        /** The HTTP status, when the stream failed on one before the server said anything */
+        status?: number;
         quitStream?: boolean;
     };
 };

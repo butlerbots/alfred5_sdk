@@ -1,6 +1,8 @@
 import { CONFIG } from "../config";
 import { UsagePolicyData } from "../types/usage/policy";
+import { ButlerBotAPIError } from "../util/api_error";
 import { formatURL } from "../util/url_formatter";
+import { requestAPI } from "./api_request";
 
 export type UsagePolicyDataOptions = {
     serverURL?: string;
@@ -9,26 +11,25 @@ export type UsagePolicyDataOptions = {
     debug?: boolean;
 }
 
-/** Fetches the current usage policy data from the server */
+/**
+ * Fetches the current usage policy data from the server.
+ *
+ * Throws a `ButlerBotAPIError` when the server refuses or fails, and when it answers without a
+ * policy.
+ */
 export async function getUsagePolicyData(options: UsagePolicyDataOptions): Promise<UsagePolicyData> {
     const useEndpoint = (options.serverURL || CONFIG.server) + (options.path || CONFIG.paths.usage.policy.v3.base);
+    const url = formatURL(useEndpoint, {}, { debug: options.debug });
 
-    const url = formatURL(useEndpoint, {}, { apiKey: options.apiKey, debug: options.debug });
-    const response = await fetch(url);
-    const data = await response.json() as { success: boolean; policy?: UsagePolicyData; error?: string };
-
-    if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Failed to fetch usage policy data: ${response.status} ${response.statusText} - ${errorText}`);
-    }
-
-    if (!data.success) {
-        throw new Error(`API error while fetching usage policy data: ${data.error || 'Unknown error'}`);
-    }
+    const data = await requestAPI<{ success: true; policy?: UsagePolicyData; error?: string }>({
+        url,
+        apiKey: options.apiKey,
+        action: "fetch usage policy data",
+    });
 
     if (!data.policy) {
-        throw new Error(`API error while fetching usage policy data: ${data.error || 'Unknown error'}`);
+        throw new ButlerBotAPIError({ action: "fetch usage policy data", status: 200, statusText: "OK", error: data.error || "No policy in the response", body: data });
     }
 
-    return data.policy as UsagePolicyData;
+    return data.policy;
 }
