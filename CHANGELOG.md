@@ -32,6 +32,15 @@ release that changes behaviour a caller relies on says so under **Changed**.
 
 ### Added
 
+- **Datasets.** `listDatasets`, `describeDataset`, `createDataset`, `alterDataset`,
+  `insertRecords`, `updateRecord`, `deleteRecord`, `queryRecords` and `aggregateRecords`, on the
+  client and as functions, against the datasets service's `/v1` API (`CONFIG.data`, or `dataUrl`
+  on the client), with their types (`DatasetRecord`, `DatasetQuery`, `DatasetAggregate`, …).
+  Keys need `datasets.read`, `datasets.write` or `datasets.admin` and a grant on each dataset.
+- **Webhook signatures.** `verifyWebhookSignature` (the `alfred`, `github` and `stripe` schemes)
+  and `signWebhook` (the `alfred` scheme), on Web Crypto.
+- `ButlerBotAPIError` reads `code`, `issues` and `retryAfter` off a refusal's body, and says
+  `isForbidden` (403) and `isRateLimited` (429).
 - `guildId` on `DiscordAddress`: the server a Discord channel belongs to, so a persona set for
   that server applies across its channels.
 - `timeout: { firstEventMs, idleMs }` on `createConversation()` and on each `send()`/`ask()`:

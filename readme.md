@@ -581,6 +581,66 @@ try {
 `error` and `errormessage` are the server's own words. A job or delivery that is not this key's
 is answered exactly as one that does not exist, so a 404 means either.
 
+## Datasets
+
+A user's datasets are typed records that Alfred, their reflexes, their pages and your app all
+read and write: sensor readings, events, a log. Your app reaches them straight on the datasets
+service (`data.butler.now`, or `dataUrl` on the client) with its key, which needs a scope
+(`datasets.read` for queries, `datasets.write` for records, `datasets.admin` to create a dataset
+or change its schema, each implying the ones before) and a grant on each dataset, which the user
+or Alfred sets when the key is made: `{ "sensor-readings": "append" }`, or `{ "myapp-*": "admin" }`
+for datasets the app makes and keeps itself.
+
+```typescript
+await client.insertRecords({
+  dataset: "sensor-readings",
+  records: [{ key: `garden:${reading.id}`, at: reading.takenAt, data: { celsius: reading.c } }],
+});
+
+const { records, more, cursor } = await client.queryRecords({
+  dataset: "sensor-readings",
+  query: { where: { celsius: { gte: 30 } }, from: "2026-11-01T00:00:00Z", limit: 100 },
+});
+
+const { groups } = await client.aggregateRecords({
+  dataset: "sensor-readings",
+  aggregate: { groupBy: [{ at: "day" }], measures: [{ op: "avg", field: "celsius" }], from: "2026-11-01T00:00:00Z" },
+});
+```
+
+- **`key` makes a retry harmless.** A record whose key is already there is left as it is
+  (`onConflict: "skip"`, the default), replaced or merged, and answers so; each record of a
+  batch (up to 500) answers on its own.
+- `listDatasets`, `describeDataset`, `createDataset`, `alterDataset`, `insertRecords`,
+  `updateRecord` and `deleteRecord` (by `recordId` or `key`), `queryRecords` (a page at a time:
+  `more`, then `cursor`) and `aggregateRecords`.
+- A large dataset needs a bound on a read: a range on `at` (`from`/`to`) or a filter on an
+  indexed field.
+- A dataset the key has no grant on is a 404 naming those it has. A refusal is a
+  `ButlerBotAPIError` with the service's `code`, every one of its `issues` (with the real field
+  ids and options) and, on a 429 or 503, `retryAfter`; `isForbidden` (403) and `isRateLimited`
+  (429) join `isNotFound`, `isConflict` and `isBadRequest`.
+
+## Webhook signatures
+
+Alfred can give the user an inbound webhook: a URL a service POSTs to, whose deliveries his
+reflexes and watches react to. `signWebhook` signs a delivery your app sends to one made with
+the `alfred` scheme, and `verifyWebhookSignature` checks a delivery your own app receives, for the
+`alfred`, `github` and `stripe` schemes, on the raw body exactly as it arrived:
+
+```typescript
+import { signWebhook, verifyWebhookSignature } from "@butlerbot/sdk";
+
+const body = JSON.stringify({ door: "open" });
+await fetch(webhookUrl, { method: "POST", body, headers: { "Content-Type": "application/json", ...(await signWebhook({ secret, body })) } });
+
+const check = await verifyWebhookSignature({ scheme: "github", secret, body: rawBody, headers: request.headers });
+if (!check.ok) return new Response(check.reason, { status: 401 });
+```
+
+A timestamped scheme refuses a timestamp more than five minutes from now (`toleranceSeconds`).
+Web Crypto only: Node 18+, Bun, Deno and browsers.
+
 ## Environment
 
 Node 18+. Node 22 and every browser have a built-in WebSocket; on older Node, install

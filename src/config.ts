@@ -7,6 +7,11 @@ export const CONFIG = {
      * addresses rather than one.
      */
     link: "https://link.butler.now",
+    /**
+     * The datasets service: a user's typed records, which an app reaches straight with its key
+     * rather than through the core server, since ingestion volume is why it is separate.
+     */
+    data: "https://data.butler.now",
     healthcheckPath: "/api/healthcheck",
     paths: {
         conversation: {
@@ -60,6 +65,10 @@ export const CONFIG = {
         judge: {
             /** A decision on stated facts, by a decision model. */
             base: "/api/judge",
+        },
+        datasets: {
+            /** On `CONFIG.data`. One dataset is `${base}/${name}`, its records `${base}/${name}/records`. */
+            base: "/v1/datasets",
         },
     }
 }

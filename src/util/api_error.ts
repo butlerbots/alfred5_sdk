@@ -57,4 +57,36 @@ export class ButlerBotAPIError extends Error {
     get isBadRequest(): boolean {
         return this.status === 400;
     }
+
+    /** The key may not do this: a scope it lacks, or a grant it does not hold. */
+    get isForbidden(): boolean {
+        return this.status === 403;
+    }
+
+    /** Too many requests: wait `retryAfter` seconds. */
+    get isRateLimited(): boolean {
+        return this.status === 429;
+    }
+
+    /** The service's machine-readable reason, when it gave one (the datasets API's `invalid`, `not_found`, `forbidden`…). */
+    get code(): string | undefined {
+        const code = this.bodyField("code");
+        return typeof code === "string" ? code : undefined;
+    }
+
+    /** Every issue a refusal listed, each with a `path` and a `message`, when it listed them. */
+    get issues(): Array<{ path: string; message: string; [extra: string]: unknown }> {
+        const issues = this.bodyField("issues");
+        return Array.isArray(issues) ? issues as Array<{ path: string; message: string }> : [];
+    }
+
+    /** How many seconds to wait before trying again, when the service said. */
+    get retryAfter(): number | undefined {
+        const value = this.bodyField("retryAfter");
+        return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+    }
+
+    private bodyField(name: string): unknown {
+        return this.body && typeof this.body === "object" && !Array.isArray(this.body) ? (this.body as Record<string, unknown>)[name] : undefined;
+    }
 }
