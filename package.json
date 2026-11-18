@@ -1,6 +1,6 @@
 {
 	"name": "@butlerbot/sdk",
-	"version": "0.0.48",
+	"version": "0.0.49",
 	"description": "The official Butler SDK, for talking to Alfred",
 	"main": "dist/index.js",
 	"types": "dist/index.d.ts",
