@@ -27,6 +27,21 @@ import {
     type ListDeliveriesOptions,
 } from "./modules/outreach";
 import { judge, type JudgeOptions } from "./modules/judge";
+import {
+    aggregateRecords,
+    alterDataset,
+    createDataset,
+    deleteRecord,
+    describeDataset,
+    insertRecords,
+    listDatasets,
+    queryRecords,
+    updateRecord,
+    type DatasetOptions,
+    type DatasetsRequestOptions,
+    type RecordLocator,
+} from "./modules/datasets";
+import type { DatasetAggregate, DatasetAlter, DatasetCreate, DatasetInsertRecord, DatasetOnConflict, DatasetQuery, DatasetUpdate } from "./types/datasets";
 import type { JudgeQuestions } from "./types/judge";
 
 type OptionalApiKey<T> = Omit<T, "apiKey"> & {
@@ -45,6 +60,11 @@ export type ButlerBotClientOptions = {
      * unless this names somewhere else.
      */
     linkUrl?: string;
+    /**
+     * The datasets service, when it is not the hosted one (`data.butler.now`). The datasets
+     * methods go there directly, with the client's key.
+     */
+    dataUrl?: string;
     /** The API key to use with ButlerBot */
     apiKey: string;
     /** Whether to enable debug logs */
@@ -68,12 +88,14 @@ export class ButlerBotClient {
     private apiKey: string;
     private serverUrl: string;
     private linkUrl: string;
+    private dataUrl: string;
     private debug: boolean;
 
     constructor(config: ButlerBotClientOptions) {
         this.apiKey = config.apiKey;
         this.serverUrl = config.serverUrl || CONFIG.server;
         this.linkUrl = resolveLinkUrl(config);
+        this.dataUrl = config.dataUrl || CONFIG.data;
         this.debug = config.debug || false;
     }
 
@@ -170,6 +192,56 @@ export class ButlerBotClient {
         return judge<Q>(this.forRequest(config));
     }
 
+    /** The datasets this key has a grant on. Needs `datasets.read` */
+    listDatasets(config: OptionalApiKey<DatasetsRequestOptions> = {}) {
+        return listDatasets(this.forData(config));
+    }
+
+    /** One dataset: schema, settings, counts, this key's access and the latest records */
+    describeDataset(config: OptionalApiKey<DatasetOptions>) {
+        return describeDataset(this.forData(config));
+    }
+
+    /** Creates a dataset. Needs `datasets.admin` and an `admin` pattern grant matching its name (`myapp-*`) */
+    createDataset(config: OptionalApiKey<DatasetsRequestOptions & { definition: DatasetCreate }>) {
+        return createDataset(this.forData(config));
+    }
+
+    /** Changes a dataset's schema or settings. Needs `datasets.admin` and an `admin` grant */
+    alterDataset(config: OptionalApiKey<DatasetOptions & { changes: DatasetAlter }>) {
+        return alterDataset(this.forData(config));
+    }
+
+    /** Inserts records, one or up to 500; a record whose `key` is there already is skipped, replaced or merged */
+    insertRecords<D extends Record<string, unknown>>(config: OptionalApiKey<DatasetOptions & { records: DatasetInsertRecord<D>[]; onConflict?: DatasetOnConflict }>) {
+        return insertRecords<D>(this.forData(config));
+    }
+
+    /** Changes one record, by `recordId` or `key` */
+    updateRecord<D extends Record<string, unknown>>(config: OptionalApiKey<DatasetOptions & RecordLocator & { change: DatasetUpdate }>) {
+        return updateRecord<D>(this.forData(config) as DatasetOptions & RecordLocator & { change: DatasetUpdate });
+    }
+
+    /** Deletes one record, by `recordId` or `key` */
+    deleteRecord(config: OptionalApiKey<DatasetOptions & RecordLocator>) {
+        return deleteRecord(this.forData(config) as DatasetOptions & RecordLocator);
+    }
+
+    /** Records, a page at a time */
+    queryRecords<D extends Record<string, unknown> = Record<string, unknown>>(config: OptionalApiKey<DatasetOptions & { query?: DatasetQuery }>) {
+        return queryRecords<D>(this.forData(config));
+    }
+
+    /** Groups and measures over a dataset */
+    aggregateRecords(config: OptionalApiKey<DatasetOptions & { aggregate: DatasetAggregate }>) {
+        return aggregateRecords(this.forData(config));
+    }
+
+    /** The client's datasets service and key underneath whatever the call named itself. */
+    private forData<T extends { dataURL?: string; apiKey: string; debug?: boolean }>(config: OptionalApiKey<T>): T {
+        return { dataURL: this.dataUrl, apiKey: this.apiKey, debug: this.debug, ...given(config) } as T;
+    }
+
     /** The client's own server and key underneath whatever the call named itself. */
     private forRequest<T extends { serverURL?: string; apiKey: string; debug?: boolean }>(config: OptionalApiKey<T>): T {
         return { serverURL: this.serverUrl, apiKey: this.apiKey, debug: this.debug, ...given(config) } as T;
@@ -209,6 +281,10 @@ export type {
     AnswerDeliveryOptions,
 } from "./modules/outreach";
 export { judge } from "./modules/judge";
+export { listDatasets, describeDataset, createDataset, alterDataset, insertRecords, updateRecord, deleteRecord, queryRecords, aggregateRecords } from "./modules/datasets";
+export type { DatasetsRequestOptions, DatasetOptions, RecordLocator } from "./modules/datasets";
+export { verifyWebhookSignature, signWebhook, WEBHOOK_TOLERANCE_SECONDS } from "./modules/webhooks";
+export type { WebhookScheme, WebhookVerification } from "./modules/webhooks";
 export type { JudgeRequestOptions, JudgeOptions } from "./modules/judge";
 export { LinkConversationTransport } from "./modules/transport_link";
 export { SSEConversationTransport } from "./modules/transport_sse";

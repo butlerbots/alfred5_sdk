@@ -8,4 +8,5 @@ export * from "./conversation/context";
 export * from "./jobs";
 export * from "./outreach";
 export * from "./judge";
+export * from "./datasets";
 export * from "./error";
